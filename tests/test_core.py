@@ -8,6 +8,9 @@ from paseo_pane.core import (
     logs_argv,
     ls_argv,
     parse_agents,
+    parse_permissions,
+    permit_argv,
+    permit_ls_argv,
     send_argv,
     style_line,
 )
@@ -75,3 +78,35 @@ def test_style_line_colours_only_the_tag():
     assert [(s.start, s.end) for s in user.spans] == [(0, 6)]
     assert style_line("no tag here").spans == []
     assert "red" in str(style_line("[Error] bad").spans[0].style)
+
+
+PERMITS = json.dumps(
+    [
+        {"id": "req11111-aaaa", "agentId": "agent-a", "agentShortId": "agent-a", "name": "Bash",
+         "description": "rm -rf build"},
+        {"id": "req22222-bbbb", "agentId": "agent-b", "agentShortId": "agent-b", "name": "Edit",
+         "description": "-"},
+    ]
+)
+
+
+def test_parse_permissions_filters_to_one_agent():
+    permits = parse_permissions(PERMITS, "agent-a")
+    assert [p.id for p in permits] == ["req11111-aaaa"]
+    assert permits[0].label == "Bash: rm -rf build"
+    assert parse_permissions(PERMITS, "agent-b")[0].label == "Edit"  # "-" means no description
+    assert parse_permissions(PERMITS, "nobody") == []
+
+
+def test_parse_permissions_rejects_non_list():
+    with pytest.raises(ValueError):
+        parse_permissions('{"id": "x"}', "a")
+
+
+def test_permit_argv_names_one_request_never_blanket():
+    assert permit_argv("allow", "agent-a", "req1")[1:] == ["permit", "allow", "agent-a", "req1"]
+    assert permit_argv("deny", "agent-a", "req1")[1:] == ["permit", "deny", "agent-a", "req1"]
+    assert "--all" not in permit_argv("deny", "agent-a", "req1")
+    with pytest.raises(ValueError):
+        permit_argv("maybe", "agent-a", "req1")
+    assert permit_ls_argv()[1:] == ["permit", "ls", "--json"]

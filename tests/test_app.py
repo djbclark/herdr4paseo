@@ -101,3 +101,87 @@ async def test_history_recall(calls):
         assert app.query_one("#prompt", PromptArea).text == "first"
         await pilot.press("ctrl+n")
         assert app.query_one("#prompt", PromptArea).text == ""
+
+
+AGENT_A = "aaaaaaa1-0000-0000-0000-000000000001"
+PERMITS = json.dumps(
+    [
+        {"id": "req11111-aaaa", "agentId": AGENT_A, "agentShortId": "aaaaaaa", "name": "Bash",
+         "description": "rm -rf build"},
+        {"id": "req22222-bbbb", "agentId": AGENT_A, "agentShortId": "aaaaaaa", "name": "Edit",
+         "description": "src/x.py"},
+        {"id": "req33333-cccc", "agentId": "bbbbbbb2-0000-0000-0000-000000000002",
+         "agentShortId": "bbbbbbb", "name": "Bash", "description": "other agent"},
+    ]
+)
+
+
+def permit_calls(path: Path) -> list[list[str]]:
+    return [c for c in recorded(path) if c[0] == "permit" and c[1] != "ls"]
+
+
+async def banner_visible(pilot, app) -> None:
+    for _ in range(100):
+        await pilot.pause(0.05)
+        if not app.query_one("#permits").has_class("hidden"):
+            return
+    raise AssertionError("permit banner never appeared")
+
+
+@pytest.fixture
+def pending(calls, monkeypatch):
+    monkeypatch.setenv("FAKE_PASEO_PERMITS", PERMITS)
+
+
+async def test_no_pending_means_no_banner_and_prompt_keeps_ctrl_a(calls):
+    app = PaneApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await settle(pilot, app, "plain assistant line")
+        assert app.query_one("#permits").has_class("hidden")
+        await pilot.press(*"abc", "ctrl+a", "x")  # ctrl+a is the prompt's line-start
+        assert app.query_one("#prompt", PromptArea).text == "xabc"
+    assert permit_calls(calls) == []
+
+
+async def test_banner_lists_only_this_agents_requests(pending, calls):
+    app = PaneApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await banner_visible(pilot, app)
+        assert [p.id for p in app.permits] == ["req11111-aaaa", "req22222-bbbb"]
+
+
+async def test_allow_confirms_then_answers_each_shown_request_by_id(pending, calls):
+    app = PaneApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await banner_visible(pilot, app)
+        await pilot.press("ctrl+a")
+        await pilot.pause(0.3)
+        assert permit_calls(calls) == []  # nothing answered before confirming
+        await pilot.press("y")
+        await pilot.pause(0.5)
+    assert permit_calls(calls) == [
+        ["permit", "allow", AGENT_A, "req11111-aaaa"],
+        ["permit", "allow", AGENT_A, "req22222-bbbb"],
+    ]
+
+
+async def test_declining_confirmation_answers_nothing(pending, calls):
+    app = PaneApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await banner_visible(pilot, app)
+        await pilot.press("ctrl+a")
+        await pilot.pause(0.3)
+        await pilot.press("n")
+        await pilot.pause(0.3)
+    assert permit_calls(calls) == []
+
+
+async def test_deny_answers_by_id(pending, calls):
+    app = PaneApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await banner_visible(pilot, app)
+        await pilot.press("ctrl+d")
+        await pilot.pause(0.3)
+        await pilot.press("y")
+        await pilot.pause(0.5)
+    assert [c[1] for c in permit_calls(calls)] == ["deny", "deny"]

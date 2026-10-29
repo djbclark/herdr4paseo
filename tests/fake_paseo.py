@@ -26,6 +26,8 @@ elif cmd == "logs":
         print("plain assistant line")
     sys.stdout.flush()
     time.sleep(30)  # `-f` follows until killed
+elif cmd == "permit" and sys.argv[2] == "ls":
+    print(os.environ.get("FAKE_PASEO_PERMITS", "[]"))
 elif cmd == "send":
     if os.environ.get("FAKE_PASEO_SEND_FAIL"):
         print("boom", file=sys.stderr)

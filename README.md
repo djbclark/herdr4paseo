@@ -32,6 +32,7 @@ paseo-pane --tail 200 --behavior interrupt 7dba08f
 | Ctrl+O | Toggle a tools-only log view (`paseo logs --filter tools`) |
 | Ctrl+G | Switch agent |
 | Ctrl+P, Ctrl+N | Prompt history, previous and next |
+| Ctrl+A, Ctrl+D | Allow or deny the agent's pending permission requests (only active while some are pending; asks to confirm) |
 | Ctrl+Q | Quit (the agent keeps running) |
 
 The header shows the agent's status (polled every 3 s), the send behaviour and the log view. A failed send keeps your text in the box and prints the error in the log.
@@ -41,7 +42,7 @@ To talk to a remote daemon, set `PASEO_HOST` (or `PASEO_HOME`) as you would for 
 ## Limits
 
 1. It is a log view, not the agent's own TUI: no slash commands, no PTY features.
-2. Permission requests are not handled here yet. Answer them in Paseo or with `paseo permit`.
+2. Permission requests: a banner lists the shown agent's pending requests (polled every 3 s). Ctrl+A or Ctrl+D opens a confirmation listing them; `y` answers each listed request by id with `paseo permit allow|deny`, so a request that arrives after you looked is never approved blind. While none are pending, Ctrl+A and Ctrl+D keep their prompt-editing meaning (line start, delete).
 3. Log entries are coloured by the `[Tag]` prefix `paseo logs` prints; untagged continuation lines are plain.
 4. `paseo send` text beginning with `-` gets one leading space so the CLI does not read it as a flag.
 

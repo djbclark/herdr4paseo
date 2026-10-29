@@ -72,6 +72,47 @@ def find_agent(agents: list[Agent], ident: str) -> Agent | None:
     return prefixed[0] if len(prefixed) == 1 else None
 
 
+@dataclass(frozen=True)
+class Permission:
+    id: str
+    agent_id: str
+    name: str
+    description: str
+
+    @property
+    def label(self) -> str:
+        return f"{self.name}: {self.description}" if self.description not in ("", "-") else self.name
+
+
+def parse_permissions(raw: str, agent_id: str) -> list[Permission]:
+    """Parse `paseo permit ls --json` (every agent's pending requests); keep one agent's."""
+    data = json.loads(raw)
+    if not isinstance(data, list):
+        raise ValueError("expected a JSON array from `paseo permit ls --json`")
+    return [
+        Permission(
+            id=str(item.get("id", "")),
+            agent_id=str(item.get("agentId", "")),
+            name=str(item.get("name", "?")),
+            description=str(item.get("description", "")),
+        )
+        for item in data
+        if item.get("agentId") == agent_id
+    ]
+
+
+def permit_ls_argv() -> list[str]:
+    return [paseo_bin(), "permit", "ls", "--json"]
+
+
+def permit_argv(decision: str, agent_id: str, request_id: str) -> list[str]:
+    """Answer exactly one request. Never `allow <agent>` alone: that approves everything
+    pending, including requests that arrived after the user looked."""
+    if decision not in ("allow", "deny"):
+        raise ValueError(f"decision must be allow or deny, got {decision!r}")
+    return [paseo_bin(), "permit", decision, agent_id, request_id]
+
+
 def ls_argv() -> list[str]:
     # -g: all workspaces; -a: archived too, so an agent you attached to stays findable.
     return [paseo_bin(), "ls", "-g", "-a", "--json"]

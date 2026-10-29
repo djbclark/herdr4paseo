@@ -16,7 +16,7 @@ from textual.binding import Binding
 from textual.containers import Vertical
 from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import Footer, Header, OptionList, RichLog, TextArea
+from textual.widgets import Footer, Header, OptionList, RichLog, Static, TextArea
 from textual.widgets.option_list import Option
 
 from rich.text import Text
@@ -24,10 +24,14 @@ from rich.text import Text
 from .core import (
     BEHAVIORS,
     Agent,
+    Permission,
     find_agent,
     logs_argv,
     ls_argv,
     parse_agents,
+    parse_permissions,
+    permit_argv,
+    permit_ls_argv,
     send_argv,
     style_line,
 )
@@ -71,6 +75,31 @@ class PickAgent(ModalScreen[str]):
         self.dismiss("")
 
 
+class ConfirmPermits(ModalScreen[bool]):
+    """Lists exactly the requests that will be answered; y confirms, n or Escape cancels."""
+
+    BINDINGS = [
+        Binding("y", "confirm(True)", "Yes"),
+        Binding("n,escape", "confirm(False)", "No"),
+    ]
+
+    def __init__(self, decision: str, permits: list[Permission]) -> None:
+        super().__init__()
+        self._decision = decision
+        self._permits = permits
+
+    def compose(self) -> ComposeResult:
+        lines = "\n".join(f"  - {p.label}" for p in self._permits)
+        yield Static(
+            f"{self._decision.upper()} {len(self._permits)} pending request(s)?\n\n{lines}\n\n[y] yes   [n] no",
+            id="confirm-box",
+            markup=False,
+        )
+
+    def action_confirm(self, answer: bool) -> None:
+        self.dismiss(answer)
+
+
 async def run_paseo(argv: list[str]) -> tuple[int, str, str]:
     proc = await asyncio.create_subprocess_exec(
         *argv,
@@ -86,7 +115,10 @@ class PaneApp(App[None]):
     CSS = """
     #log { height: 1fr; }
     #prompt { height: 6; border: round $primary; }
-    PickAgent { align: center middle; }
+    #permits { height: auto; background: $warning; color: $text; padding: 0 1; }
+    #permits.hidden { display: none; }
+    PickAgent, ConfirmPermits { align: center middle; }
+    #confirm-box { width: 80%; height: auto; border: round $warning; padding: 1 2; background: $surface; }
     PickAgent OptionList { width: 90%; height: 70%; border: round $primary; }
     """
     ENABLE_COMMAND_PALETTE = False  # Ctrl+P is prompt history here
@@ -94,6 +126,10 @@ class PaneApp(App[None]):
         Binding("ctrl+t", "toggle_behavior", "steer/interrupt"),
         Binding("ctrl+o", "toggle_tools", "tools only"),
         Binding("ctrl+g", "switch_agent", "agents"),
+        # Priority beats the prompt's own Ctrl+A/Ctrl+D, but check_action only enables
+        # these while a request is pending, so the prompt keeps its keys otherwise.
+        Binding("ctrl+a", "answer_permits('allow')", "allow", priority=True),
+        Binding("ctrl+d", "answer_permits('deny')", "deny", priority=True),
         Binding("ctrl+p", "history_prev", "prev", show=False),
         Binding("ctrl+n", "history_next", "next", show=False),
     ]
@@ -107,11 +143,13 @@ class PaneApp(App[None]):
         self.agent: Agent | None = None
         self._history: list[str] = []
         self._history_pos = 0
+        self.permits: list[Permission] = []
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical():
             yield RichLog(id="log", wrap=True, markup=False, highlight=False, auto_scroll=True)
+            yield Static("", id="permits", classes="hidden", markup=False)
             yield PromptArea(id="prompt")
         yield Footer()
 
@@ -119,6 +157,11 @@ class PaneApp(App[None]):
         self.query_one("#prompt", PromptArea).focus()
         self.set_interval(STATUS_POLL_SECONDS, self._refresh_status)
         self._choose_agent(self._ident)
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if action == "answer_permits":
+            return bool(self.permits)
+        return True
 
     # -- agent selection and status -------------------------------------------------
 
@@ -147,6 +190,7 @@ class PaneApp(App[None]):
         self.title = f"{picked.name} ({picked.short_id})"
         self._update_subtitle(picked.status)
         self._start_stream()
+        await self._refresh_permits()
 
     async def _refresh_status(self) -> None:
         if self.agent is None:
@@ -154,6 +198,27 @@ class PaneApp(App[None]):
         current = find_agent(await self._list_agents(), self.agent.id)
         if current is not None:
             self._update_subtitle(current.status)
+        await self._refresh_permits()
+
+    async def _refresh_permits(self) -> None:
+        """Poll pending permission requests for the shown agent and update the banner."""
+        if self.agent is None:
+            return
+        code, out, _err = await run_paseo(permit_ls_argv())
+        if code != 0:
+            return  # keep the last banner; a transient failure must not hide a pending request
+        try:
+            self.permits = parse_permissions(out, self.agent.id)
+        except ValueError:
+            return
+        self.refresh_bindings()
+        banner = self.query_one("#permits", Static)
+        if self.permits:
+            names = "; ".join(p.label for p in self.permits)
+            banner.update(f"{len(self.permits)} pending: {names}  (Ctrl+A allow, Ctrl+D deny)")
+            banner.remove_class("hidden")
+        else:
+            banner.add_class("hidden")
 
     def _update_subtitle(self, status: str) -> None:
         view = "tools only" if self.tools_only else "full log"
@@ -219,6 +284,23 @@ class PaneApp(App[None]):
 
     def action_switch_agent(self) -> None:
         self._choose_agent(None)
+
+    @work(exclusive=True, group="permit")  # push_screen_wait only runs inside a worker
+    async def action_answer_permits(self, decision: str) -> None:
+        if self.agent is None:
+            return
+        await self._refresh_permits()
+        shown = list(self.permits)  # answer exactly what the confirmation lists
+        if not shown:
+            self._note("no pending permission requests", "dim")
+            return
+        if not await self.push_screen_wait(ConfirmPermits(decision, shown)):
+            return
+        for permit in shown:
+            code, _out, err = await run_paseo(permit_argv(decision, self.agent.id, permit.id))
+            result = "ok" if code == 0 else f"failed (rc={code}): {err.strip()}"
+            self._note(f"permit {decision} {permit.label}: {result}", "dim" if code == 0 else "bold red")
+        await self._refresh_permits()
 
     def action_history_prev(self) -> None:
         self._recall(-1)
