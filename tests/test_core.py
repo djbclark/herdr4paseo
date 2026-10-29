@@ -110,3 +110,11 @@ def test_permit_argv_names_one_request_never_blanket():
     with pytest.raises(ValueError):
         permit_argv("maybe", "agent-a", "req1")
     assert permit_ls_argv()[1:] == ["permit", "ls", "--json"]
+
+
+def test_follow_banner_is_dimmed_and_loses_the_ctrl_c_hint():
+    banner = style_line("--- Following logs (last 20 entries; Ctrl+C to stop) ---")
+    assert banner.plain == "--- following live (last 20 entries) ---"
+    assert "dim" in str(banner.style)
+    # a different dashed line is left alone
+    assert style_line("--- something else ---").plain == "--- something else ---"

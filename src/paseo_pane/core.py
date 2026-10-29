@@ -15,6 +15,7 @@ from rich.text import Text
 BEHAVIORS = ("steer", "interrupt")
 
 _TAG = re.compile(r"^\[([^\]]+)\]")
+_FOLLOW_BANNER = re.compile(r"^--- Following logs \(last (\d+) entries; Ctrl\+C to stop\) ---$")
 _STYLES = {
     "user": "bold cyan",
     "thought": "italic dim",
@@ -136,7 +137,14 @@ def send_argv(agent: str, text: str, behavior: str) -> list[str]:
 
 
 def style_line(line: str) -> Text:
-    """Colour the `[Tag]` prefix `paseo logs` puts on each entry; leave the rest alone."""
+    """Colour the `[Tag]` prefix `paseo logs` puts on each entry; leave the rest alone.
+
+    The "--- Following logs (...; Ctrl+C to stop) ---" banner `paseo logs -f` prints is
+    dimmed and reworded: Ctrl+C is not how you stop anything inside this TUI.
+    """
+    banner = _FOLLOW_BANNER.match(line)
+    if banner:
+        return Text(f"--- following live (last {banner.group(1)} entries) ---", style="dim")
     match = _TAG.match(line)
     if not match:
         return Text(line)
