@@ -111,12 +111,15 @@ class ConfirmPermits(ModalScreen[bool]):
 
 
 async def run_paseo(argv: list[str]) -> tuple[int, str, str]:
-    proc = await asyncio.create_subprocess_exec(
-        *argv,
-        stdin=asyncio.subprocess.DEVNULL,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *argv,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except OSError as exc:  # missing or non-executable paseo: report it like any failed call
+        return 127, "", f"cannot run {argv[0]}: {exc.strerror or exc} (set PASEO_BIN to its full path)"
     out, err = await proc.communicate()
     return proc.returncode or 0, out.decode(errors="replace"), err.decode(errors="replace")
 

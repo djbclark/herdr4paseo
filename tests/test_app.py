@@ -251,3 +251,11 @@ async def test_unreachable_daemon_degrades_to_a_note(calls):
         await pilot.press("enter")  # typed commands still send
         await pilot.pause(0.3)
     assert any(c[0] == "send" and c[-1] == "/c" for c in recorded(calls))
+
+
+async def test_missing_paseo_binary_is_reported_not_a_crash(calls, monkeypatch):
+    monkeypatch.setenv("PASEO_BIN", "/nonexistent/paseo")
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await settle(pilot, app, "cannot run /nonexistent/paseo")
+        assert "PASEO_BIN" in log_text(app)
