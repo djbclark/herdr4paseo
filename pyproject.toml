@@ -5,7 +5,7 @@ description = "A log view plus prompt box for one Paseo agent, built on the pase
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
-dependencies = ["textual>=0.80"]
+dependencies = ["textual>=0.80", "websockets>=13"]
 
 [project.scripts]
 herdr4paseo = "herdr4paseo.app:main"

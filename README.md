@@ -28,6 +28,7 @@ herdr4paseo --tail 200 --behavior interrupt 7dba08f
 | --- | --- |
 | Enter | Send the prompt |
 | Ctrl+J, Shift+Enter | Newline in the prompt |
+| `/`, then Tab, Up, Down | Slash-command suggestions: Tab completes the highlighted command, Up and Down choose, Enter sends exactly what you typed |
 | Ctrl+T | Toggle send behaviour: `steer` (default) or `interrupt` |
 | Ctrl+O | Toggle a tools-only log view (`paseo logs --filter tools`) |
 | Ctrl+G | Switch agent |
@@ -41,10 +42,11 @@ To talk to a remote daemon, set `PASEO_HOST` (or `PASEO_HOME`) as you would for 
 
 ## Limits
 
-1. It is a log view, not the agent's own TUI: no slash commands, no PTY features.
+1. It is a log view, not the agent's own TUI: no PTY features. Slash commands work because `paseo send` passes `/context`, `/compact` and skills such as `/steps` through to the provider; the app's own commands (for example `/exit`) are client-side in Paseo and do not exist here.
 2. Permission requests: a banner lists the shown agent's pending requests (polled every 3 s). Ctrl+A or Ctrl+D opens a confirmation listing them; `y` answers each listed request by id with `paseo permit allow|deny`, so a request that arrives after you looked is never approved blind. While none are pending, Ctrl+A and Ctrl+D keep their prompt-editing meaning (line start, delete).
-3. Log entries are coloured by the `[Tag]` prefix `paseo logs` prints; untagged continuation lines are plain.
-4. `paseo send` text beginning with `-` gets one leading space so the CLI does not read it as a flag.
+3. Slash suggestions come from the daemon's `list_commands_request`, the one request the `paseo` CLI does not expose, over its local WebSocket (`PASEO_HOST`, else `daemon.listen` in `$PASEO_HOME/config.json`, default `~/.paseo`). It is read-only. The daemon's local credential is read from `$PASEO_HOME/local-credential` and sent only to a loopback daemon. If the daemon cannot be reached, a note appears in the log and typed commands still send.
+4. Log entries are coloured by the `[Tag]` prefix `paseo logs` prints; untagged continuation lines are plain.
+5. `paseo send` text beginning with `-` gets one leading space so the CLI does not read it as a flag.
 
 ## Development
 

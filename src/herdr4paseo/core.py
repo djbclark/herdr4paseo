@@ -102,6 +102,49 @@ def parse_permissions(raw: str, agent_id: str) -> list[Permission]:
     ]
 
 
+@dataclass(frozen=True)
+class Command:
+    name: str
+    description: str
+    argument_hint: str
+    kind: str  # "command" or "skill"
+
+    @property
+    def label(self) -> str:
+        hint = f" {self.argument_hint}" if self.argument_hint else ""
+        return f"/{self.name}{hint}  {self.description}"
+
+
+def parse_commands(items: list[object]) -> list[Command]:
+    """Parse the `commands` array of a list_commands response; skip malformed entries."""
+    commands = []
+    for item in items:
+        if not isinstance(item, dict) or not item.get("name"):
+            continue
+        commands.append(
+            Command(
+                name=str(item["name"]),
+                description=str(item.get("description") or ""),
+                argument_hint=str(item.get("argumentHint") or ""),
+                kind=str(item.get("kind") or "command"),
+            )
+        )
+    return sorted(commands, key=lambda c: c.name.lower())
+
+
+def match_commands(commands: list[Command], text: str, limit: int = 8) -> list[Command]:
+    """Commands to suggest for a prompt of `/partial`: prefix matches first, then substrings.
+
+    Only a single-line prompt that starts with "/" and has no space yet is a command being typed.
+    """
+    if not text.startswith("/") or any(ch.isspace() for ch in text):
+        return []
+    needle = text[1:].lower()
+    prefix = [c for c in commands if c.name.lower().startswith(needle)]
+    inside = [c for c in commands if needle in c.name.lower() and c not in prefix]
+    return (prefix + inside)[:limit]
+
+
 def permit_ls_argv() -> list[str]:
     return [paseo_bin(), "permit", "ls", "--json"]
 

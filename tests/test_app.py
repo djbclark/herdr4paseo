@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from textual.widgets import RichLog
 
+from fake_daemon import serve
 from herdr4paseo.app import Herdr4PaseoApp, PromptArea
 
 FAKE = Path(__file__).with_name("fake_paseo.py")
@@ -17,6 +18,8 @@ def calls(tmp_path, monkeypatch):
     path.touch()
     monkeypatch.setenv("PASEO_BIN", str(FAKE))
     monkeypatch.setenv("FAKE_PASEO_CALLS", str(path))
+    monkeypatch.setenv("PASEO_HOME", str(tmp_path / "home"))  # no credential, no real daemon
+    monkeypatch.setenv("PASEO_HOST", "127.0.0.1:1")  # refused at once: slash completion stays off
     monkeypatch.delenv("FAKE_PASEO_SEND_FAIL", raising=False)
     return path
 
@@ -185,3 +188,66 @@ async def test_deny_answers_by_id(pending, calls):
         await pilot.press("y")
         await pilot.pause(0.5)
     assert [c[1] for c in permit_calls(calls)] == ["deny", "deny"]
+
+
+@pytest.fixture
+async def daemon(calls, monkeypatch):
+    async with serve() as fake:
+        monkeypatch.setenv("PASEO_HOST", f"127.0.0.1:{fake.port}")
+        yield fake
+
+
+def slash_text(app: Herdr4PaseoApp) -> str:
+    return str(app.query_one("#slash").render())
+
+
+async def commands_loaded(pilot, app) -> None:
+    for _ in range(100):
+        await pilot.pause(0.05)
+        if app.commands:
+            return
+    raise AssertionError("slash commands never loaded")
+
+
+async def test_typing_slash_suggests_and_tab_completes(daemon):
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await commands_loaded(pilot, app)
+        assert app.query_one("#slash").has_class("hidden")
+        await pilot.press("/", "c", "o")
+        assert [c.name for c in app.slash_matches] == ["code-review", "compact", "context"]
+        assert "/compact [focus]" in slash_text(app)
+        await pilot.press("down", "tab")  # highlight the second match, then accept it
+        assert app.query_one("#prompt", PromptArea).text == "/compact "
+        assert app.query_one("#slash").has_class("hidden")  # the space ends the command name
+    assert daemon.requests[0]["agentId"] == "aaaaaaa1-0000-0000-0000-000000000001"
+
+
+async def test_enter_sends_a_partial_slash_command_as_typed(daemon, calls):
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await commands_loaded(pilot, app)
+        await pilot.press("/", "c", "o", "n", "enter")
+        await pilot.pause(0.3)
+    send = next(c for c in recorded(calls) if c[0] == "send")
+    assert send[-1] == "/con"
+
+
+async def test_tab_and_arrows_do_nothing_special_without_suggestions(daemon):
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await commands_loaded(pilot, app)
+        await pilot.press("h", "i")
+        assert app.slash_matches == []
+        assert app.query_one("#slash").has_class("hidden")
+
+
+async def test_unreachable_daemon_degrades_to_a_note(calls):
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await settle(pilot, app, "slash completion unavailable")
+        await pilot.press("/", "c")
+        assert app.slash_matches == []
+        await pilot.press("enter")  # typed commands still send
+        await pilot.pause(0.3)
+    assert any(c[0] == "send" and c[-1] == "/c" for c in recorded(calls))

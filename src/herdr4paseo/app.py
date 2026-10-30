@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+from collections.abc import Callable
 
 from textual import events, work
 from textual.app import App, ComposeResult
@@ -24,10 +25,12 @@ from rich.text import Text
 from .core import (
     BEHAVIORS,
     Agent,
+    Command,
     Permission,
     find_agent,
     logs_argv,
     ls_argv,
+    match_commands,
     parse_agents,
     parse_permissions,
     permit_argv,
@@ -35,6 +38,7 @@ from .core import (
     send_argv,
     style_line,
 )
+from .daemon import DaemonError, fetch_commands
 
 STATUS_POLL_SECONDS = 3.0
 
@@ -45,8 +49,14 @@ class PromptArea(TextArea):
     class Submitted(Message):
         pass
 
+    # Set by the app: takes Tab/Up/Down, returns True when a slash suggestion consumed the key.
+    slash_handler: Callable[[str], bool] | None = None
+
     async def _on_key(self, event: events.Key) -> None:
-        if event.key == "enter":
+        if event.key in ("tab", "up", "down") and self.slash_handler and self.slash_handler(event.key):
+            event.prevent_default()
+            event.stop()
+        elif event.key == "enter":
             event.prevent_default()
             event.stop()
             self.post_message(self.Submitted())
@@ -117,6 +127,8 @@ class Herdr4PaseoApp(App[None]):
     #prompt { height: 6; border: round $primary; }
     #permits { height: auto; background: $warning; color: $text; padding: 0 1; }
     #permits.hidden { display: none; }
+    #slash { height: auto; max-height: 9; padding: 0 1; background: $panel; }
+    #slash.hidden { display: none; }
     PickAgent, ConfirmPermits { align: center middle; }
     #confirm-box { width: 80%; height: auto; border: round $warning; padding: 1 2; background: $surface; }
     PickAgent OptionList { width: 90%; height: 70%; border: round $primary; }
@@ -144,17 +156,23 @@ class Herdr4PaseoApp(App[None]):
         self._history: list[str] = []
         self._history_pos = 0
         self.permits: list[Permission] = []
+        self.commands: list[Command] = []
+        self.slash_matches: list[Command] = []
+        self._slash_idx = 0
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical():
             yield RichLog(id="log", wrap=True, markup=False, highlight=False, auto_scroll=True)
             yield Static("", id="permits", classes="hidden", markup=False)
+            yield Static("", id="slash", classes="hidden", markup=False)
             yield PromptArea(id="prompt")
         yield Footer()
 
     async def on_mount(self) -> None:
-        self.query_one("#prompt", PromptArea).focus()
+        prompt = self.query_one("#prompt", PromptArea)
+        prompt.slash_handler = self.handle_slash_key
+        prompt.focus()
         self.set_interval(STATUS_POLL_SECONDS, self._refresh_status)
         self._choose_agent(self._ident)
 
@@ -190,6 +208,7 @@ class Herdr4PaseoApp(App[None]):
         self.title = f"{picked.name} ({picked.short_id})"
         self._update_subtitle(picked.status)
         self._start_stream()
+        self._load_commands(picked.id)
         await self._refresh_permits()
 
     async def _refresh_status(self) -> None:
@@ -251,6 +270,53 @@ class Herdr4PaseoApp(App[None]):
                 with contextlib.suppress(ProcessLookupError):
                     proc.terminate()
                 await proc.wait()
+
+    # -- slash commands -------------------------------------------------------------
+
+    @work(exclusive=True, group="commands")
+    async def _load_commands(self, agent_id: str) -> None:
+        """Fetch the agent's slash commands from the daemon; completion is optional, so failure only notes."""
+        self.commands = []
+        try:
+            self.commands = await fetch_commands(agent_id)
+        except DaemonError as exc:
+            self._note(f"slash completion unavailable ({exc}); typed /commands still work", "dim")
+        self._update_slash()
+
+    def on_text_area_changed(self, event: TextArea.Changed) -> None:
+        self._update_slash()
+
+    def _update_slash(self) -> None:
+        text = self.query_one("#prompt", PromptArea).text
+        self.slash_matches = match_commands(self.commands, text)
+        self._slash_idx = min(self._slash_idx, max(0, len(self.slash_matches) - 1))
+        self._render_slash()
+
+    def _render_slash(self) -> None:
+        panel = self.query_one("#slash", Static)
+        if not self.slash_matches:
+            panel.add_class("hidden")
+            return
+        lines = [
+            f"{'>' if i == self._slash_idx else ' '} {c.label}"[:100] for i, c in enumerate(self.slash_matches)
+        ]
+        panel.update("\n".join(lines + ["  Tab complete, Up/Down choose, Enter sends as typed"]))
+        panel.remove_class("hidden")
+
+    def handle_slash_key(self, key: str) -> bool:
+        """Tab/Up/Down while suggestions show; True means the key was used."""
+        if not self.slash_matches:
+            return False
+        if key == "tab":
+            prompt = self.query_one("#prompt", PromptArea)
+            prompt.text = f"/{self.slash_matches[self._slash_idx].name} "
+            prompt.move_cursor(prompt.document.end)
+            self._slash_idx = 0
+            return True
+        step = -1 if key == "up" else 1
+        self._slash_idx = (self._slash_idx + step) % len(self.slash_matches)
+        self._render_slash()
+        return True
 
     # -- sending --------------------------------------------------------------------
 
