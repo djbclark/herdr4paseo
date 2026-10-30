@@ -9,10 +9,12 @@ import json
 import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from rich.text import Text
 
 BEHAVIORS = ("steer", "interrupt")
+HISTORY_LIMIT = 200
 
 _TAG = re.compile(r"^\[([^\]]+)\]")
 _FOLLOW_BANNER = re.compile(r"^--- Following logs \(last (\d+) entries; Ctrl\+C to stop\) ---$")
@@ -40,7 +42,8 @@ class Agent:
 
     @property
     def label(self) -> str:
-        return f"{self.short_id}  {self.status:<8} {self.name}  ({self.provider})"
+        where = f"  {self.cwd}" if self.cwd else ""
+        return f"{self.short_id}  {self.status:<8} {self.name}  ({self.provider}){where}"
 
 
 def parse_agents(raw: str) -> list[Agent]:
@@ -71,6 +74,51 @@ def find_agent(agents: list[Agent], ident: str) -> Agent | None:
         return exact[0]
     prefixed = [a for a in agents if a.id.startswith(ident)]
     return prefixed[0] if len(prefixed) == 1 else None
+
+
+def filter_agents(agents: list[Agent], query: str) -> list[Agent]:
+    """Agents whose label contains every whitespace-separated word of `query` (case-insensitive)."""
+    words = query.lower().split()
+    return [a for a in agents if all(w in a.label.lower() for w in words)]
+
+
+def should_alert(old_status: str | None, new_status: str, old_permits: int, new_permits: int) -> str | None:
+    """Why to ring the bell, or None. Only transitions alert, never a steady state."""
+    if new_permits > old_permits:
+        return "permission requested"
+    if old_status == "running" and new_status == "idle":
+        return "agent idle"
+    return None
+
+
+def history_path() -> Path:
+    """Prompt history file; HERDR4PASEO_HISTORY overrides it (tests)."""
+    override = os.environ.get("HERDR4PASEO_HISTORY")
+    if override:
+        return Path(override)
+    state = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
+    return Path(state) / "herdr4paseo" / "history.json"
+
+
+def load_history(path: Path, limit: int = HISTORY_LIMIT) -> list[str]:
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return []
+    if not isinstance(data, list):
+        return []
+    return [x for x in data if isinstance(x, str)][-limit:]
+
+
+def save_history(path: Path, history: list[str], limit: int = HISTORY_LIMIT) -> None:
+    """Best effort: a history file that cannot be written must never break sending."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(history[-limit:]))
+        tmp.replace(path)
+    except OSError:
+        pass
 
 
 @dataclass(frozen=True)
@@ -155,6 +203,10 @@ def permit_argv(decision: str, agent_id: str, request_id: str) -> list[str]:
     if decision not in ("allow", "deny"):
         raise ValueError(f"decision must be allow or deny, got {decision!r}")
     return [paseo_bin(), "permit", decision, agent_id, request_id]
+
+
+def stop_argv(agent_id: str) -> list[str]:
+    return [paseo_bin(), "stop", agent_id]
 
 
 def ls_argv() -> list[str]:

@@ -8,7 +8,7 @@ import time
 
 AGENTS = [
     {"id": "aaaaaaa1-0000-0000-0000-000000000001", "shortId": "aaaaaaa", "name": "alpha",
-     "provider": "claude/x", "status": "running", "cwd": "~/src/a", "created": "1 days ago"},
+     "provider": "claude/x", "status": os.environ.get("FAKE_PASEO_STATUS", "running"), "cwd": "~/src/a", "created": "1 days ago"},
     {"id": "bbbbbbb2-0000-0000-0000-000000000002", "shortId": "bbbbbbb", "name": "beta",
      "provider": "codex/y", "status": "idle", "cwd": "~/src/b", "created": "2 days ago"},
 ]
@@ -25,6 +25,8 @@ elif cmd == "logs":
     if not tools_only:
         print("plain assistant line")
     sys.stdout.flush()
+    if os.environ.get("FAKE_PASEO_LOGS_EXIT"):
+        sys.exit(0)
     time.sleep(30)  # `-f` follows until killed
 elif cmd == "permit" and sys.argv[2] == "ls":
     print(os.environ.get("FAKE_PASEO_PERMITS", "[]"))

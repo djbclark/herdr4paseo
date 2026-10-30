@@ -4,14 +4,19 @@ import pytest
 
 from herdr4paseo.core import (
     Agent,
+    filter_agents,
     find_agent,
+    load_history,
     logs_argv,
     ls_argv,
     parse_agents,
     parse_permissions,
     permit_argv,
     permit_ls_argv,
+    save_history,
     send_argv,
+    should_alert,
+    stop_argv,
     style_line,
 )
 
@@ -118,3 +123,36 @@ def test_follow_banner_is_dimmed_and_loses_the_ctrl_c_hint():
     assert "dim" in str(banner.style)
     # a different dashed line is left alone
     assert style_line("--- something else ---").plain == "--- something else ---"
+
+
+def test_filter_agents_matches_every_word_across_fields():
+    a = Agent("1", "aaa", "alpha", "claude/x", "running", "~/src/a")
+    b = Agent("2", "bbb", "beta", "codex/y", "idle", "~/src/b")
+    assert filter_agents([a, b], "") == [a, b]
+    assert filter_agents([a, b], "src/b") == [b]
+    assert filter_agents([a, b], "IDLE codex") == [b]
+    assert filter_agents([a, b], "nothing") == []
+
+
+def test_should_alert_only_on_transitions():
+    assert should_alert("running", "idle", 0, 0) == "agent idle"
+    assert should_alert("idle", "idle", 0, 0) is None
+    assert should_alert(None, "idle", 0, 0) is None
+    assert should_alert("running", "running", 0, 1) == "permission requested"
+    assert should_alert("running", "running", 2, 2) is None
+
+
+def test_history_round_trip_limit_and_bad_files(tmp_path):
+    path = tmp_path / "sub" / "h.json"
+    assert load_history(path) == []
+    save_history(path, ["a", "b", "c"], limit=2)
+    assert load_history(path) == ["b", "c"]
+    path.write_text("not json")
+    assert load_history(path) == []
+    path.write_text('{"x": 1}')
+    assert load_history(path) == []
+
+
+def test_stop_argv_targets_one_agent(monkeypatch):
+    monkeypatch.setenv("PASEO_BIN", "paseo")
+    assert stop_argv("abc") == ["paseo", "stop", "abc"]

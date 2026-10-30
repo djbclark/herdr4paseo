@@ -17,7 +17,7 @@ from textual.binding import Binding
 from textual.containers import Vertical
 from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import Footer, Header, OptionList, RichLog, Static, TextArea
+from textual.widgets import Footer, Header, Input, OptionList, RichLog, Static, TextArea
 from textual.widgets.option_list import Option
 
 from rich.text import Text
@@ -27,7 +27,10 @@ from .core import (
     Agent,
     Command,
     Permission,
+    filter_agents,
     find_agent,
+    history_path,
+    load_history,
     logs_argv,
     ls_argv,
     match_commands,
@@ -35,12 +38,16 @@ from .core import (
     parse_permissions,
     permit_argv,
     permit_ls_argv,
+    save_history,
     send_argv,
+    should_alert,
+    stop_argv,
     style_line,
 )
 from .daemon import DaemonError, fetch_commands
 
 STATUS_POLL_SECONDS = 3.0
+RECONNECT_SECONDS = 3.0
 
 
 class PromptArea(TextArea):
@@ -69,6 +76,8 @@ class PromptArea(TextArea):
 
 
 class PickAgent(ModalScreen[str]):
+    """Type to filter (every word must match id, status, name, provider or directory); Enter picks."""
+
     BINDINGS = [Binding("escape", "dismiss_none", "Cancel")]
 
     def __init__(self, agents: list[Agent]) -> None:
@@ -76,13 +85,59 @@ class PickAgent(ModalScreen[str]):
         self._agents = agents
 
     def compose(self) -> ComposeResult:
-        yield OptionList(*[Option(a.label, id=a.id) for a in self._agents])
+        with Vertical(id="pick-box"):
+            yield Input(placeholder="filter agents", id="pick-filter")
+            yield OptionList(*[Option(a.label, id=a.id) for a in self._agents], id="pick-list")
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        shown = filter_agents(self._agents, event.value)
+        options = self.query_one("#pick-list", OptionList)
+        options.clear_options()
+        options.add_options([Option(a.label, id=a.id) for a in shown])
+        if shown:
+            options.highlighted = 0
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        event.stop()
+        options = self.query_one("#pick-list", OptionList)
+        if options.highlighted is not None and options.option_count:
+            self.dismiss(options.get_option_at_index(options.highlighted).id or "")
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key in ("up", "down"):
+            options = self.query_one("#pick-list", OptionList)
+            event.stop()
+            event.prevent_default()
+            (options.action_cursor_up if event.key == "up" else options.action_cursor_down)()
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         self.dismiss(event.option.id or "")
 
     def action_dismiss_none(self) -> None:
         self.dismiss("")
+
+
+class ConfirmStop(ModalScreen[bool]):
+    """y stops the agent; n or Escape cancels."""
+
+    BINDINGS = [
+        Binding("y", "confirm(True)", "Yes"),
+        Binding("n,escape", "confirm(False)", "No"),
+    ]
+
+    def __init__(self, agent: Agent) -> None:
+        super().__init__()
+        self._agent = agent
+
+    def compose(self) -> ComposeResult:
+        yield Static(
+            f"STOP agent {self._agent.name} ({self._agent.short_id}, {self._agent.status})?\n\n[y] yes   [n] no",
+            id="confirm-box",
+            markup=False,
+        )
+
+    def action_confirm(self, answer: bool) -> None:
+        self.dismiss(answer)
 
 
 class ConfirmPermits(ModalScreen[bool]):
@@ -132,15 +187,18 @@ class Herdr4PaseoApp(App[None]):
     #permits.hidden { display: none; }
     #slash { height: auto; max-height: 9; padding: 0 1; background: $panel; }
     #slash.hidden { display: none; }
-    PickAgent, ConfirmPermits { align: center middle; }
+    PickAgent, ConfirmPermits, ConfirmStop { align: center middle; }
     #confirm-box { width: 80%; height: auto; border: round $warning; padding: 1 2; background: $surface; }
-    PickAgent OptionList { width: 90%; height: 70%; border: round $primary; }
+    #pick-box { width: 90%; height: 70%; border: round $primary; }
+    #pick-list { height: 1fr; }
     """
     ENABLE_COMMAND_PALETTE = False  # Ctrl+P is prompt history here
     BINDINGS = [
         Binding("ctrl+t", "toggle_behavior", "steer/interrupt"),
         Binding("ctrl+o", "toggle_tools", "tools only"),
         Binding("ctrl+g", "switch_agent", "agents"),
+        # Priority beats the prompt's own Ctrl+X (cut); a confirmation guards the stop.
+        Binding("ctrl+x", "stop_agent", "stop agent", priority=True),
         # Priority beats the prompt's own Ctrl+A/Ctrl+D, but check_action only enables
         # these while a request is pending, so the prompt keeps its keys otherwise.
         Binding("ctrl+a", "answer_permits('allow')", "allow", priority=True),
@@ -156,8 +214,9 @@ class Herdr4PaseoApp(App[None]):
         self.behavior = behavior
         self.tools_only = False
         self.agent: Agent | None = None
-        self._history: list[str] = []
-        self._history_pos = 0
+        self._history: list[str] = load_history(history_path())
+        self._last_status: str | None = None
+        self._history_pos = len(self._history)
         self.permits: list[Permission] = []
         self.commands: list[Command] = []
         self.slash_matches: list[Command] = []
@@ -208,6 +267,7 @@ class Herdr4PaseoApp(App[None]):
             self._note("no agent selected; Ctrl+G to pick one", "bold red")
             return
         self.agent = picked
+        self._last_status = picked.status
         self.title = f"{picked.name} ({picked.short_id})"
         self._update_subtitle(picked.status)
         self._start_stream()
@@ -217,10 +277,17 @@ class Herdr4PaseoApp(App[None]):
     async def _refresh_status(self) -> None:
         if self.agent is None:
             return
+        before = len(self.permits)
         current = find_agent(await self._list_agents(), self.agent.id)
         if current is not None:
             self._update_subtitle(current.status)
         await self._refresh_permits()
+        if current is not None:
+            reason = should_alert(self._last_status, current.status, before, len(self.permits))
+            self._last_status = current.status
+            if reason:
+                self.bell()
+                self._note(f"alert: {reason}", "bold yellow")
 
     async def _refresh_permits(self) -> None:
         """Poll pending permission requests for the shown agent and update the banner."""
@@ -253,26 +320,31 @@ class Herdr4PaseoApp(App[None]):
 
     @work(exclusive=True, group="stream")
     async def _start_stream(self) -> None:
+        """Follow the log; when the stream ends on its own, reattach after a pause until replaced."""
         if self.agent is None:
             return
         log = self.query_one("#log", RichLog)
-        log.clear()
-        proc = await asyncio.create_subprocess_exec(
-            *logs_argv(self.agent.id, tail=self._tail, tools_only=self.tools_only),
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-        try:
-            assert proc.stdout is not None
-            while line := await proc.stdout.readline():
-                log.write(style_line(line.decode(errors="replace").rstrip("\n")))
-            self._note(f"log stream ended (rc={await proc.wait()}); Ctrl+G to reattach", "dim")
-        finally:
-            if proc.returncode is None:
-                with contextlib.suppress(ProcessLookupError):
-                    proc.terminate()
-                await proc.wait()
+        agent_id, tools_only = self.agent.id, self.tools_only
+        while True:
+            log.clear()
+            proc = await asyncio.create_subprocess_exec(
+                *logs_argv(agent_id, tail=self._tail, tools_only=tools_only),
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            try:
+                assert proc.stdout is not None
+                while line := await proc.stdout.readline():
+                    log.write(style_line(line.decode(errors="replace").rstrip("\n")))
+                rc = await proc.wait()
+            finally:
+                if proc.returncode is None:
+                    with contextlib.suppress(ProcessLookupError):
+                        proc.terminate()
+                    await proc.wait()
+            self._note(f"log stream ended (rc={rc}); reconnecting in {RECONNECT_SECONDS:g}s", "dim")
+            await asyncio.sleep(RECONNECT_SECONDS)
 
     # -- slash commands -------------------------------------------------------------
 
@@ -338,6 +410,7 @@ class Herdr4PaseoApp(App[None]):
             return  # keep the text so nothing typed is lost
         self._history.append(text)
         self._history_pos = len(self._history)
+        save_history(history_path(), self._history)
         prompt.clear()
 
     # -- actions --------------------------------------------------------------------
@@ -370,6 +443,18 @@ class Herdr4PaseoApp(App[None]):
             result = "ok" if code == 0 else f"failed (rc={code}): {err.strip()}"
             self._note(f"permit {decision} {permit.label}: {result}", "dim" if code == 0 else "bold red")
         await self._refresh_permits()
+
+    @work(exclusive=True, group="stop")  # push_screen_wait only runs inside a worker
+    async def action_stop_agent(self) -> None:
+        if self.agent is None:
+            return
+        if not await self.push_screen_wait(ConfirmStop(self.agent)):
+            return
+        code, _out, err = await run_paseo(stop_argv(self.agent.id))
+        if code == 0:
+            self._note(f"stopped {self.agent.name}", "dim")
+        else:
+            self._note(f"stop failed (rc={code}): {err.strip()}", "bold red")
 
     def action_history_prev(self) -> None:
         self._recall(-1)

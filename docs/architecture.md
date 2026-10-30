@@ -6,6 +6,7 @@ herdr4paseo owns nothing. The agent, its history and its permissions live in the
 
 | Purpose | Command | When |
 | --- | --- | --- |
+| Stop the agent (Ctrl+X, after confirmation) | `paseo stop <id>` | On request |
 | List agents, for the picker and the status line | `paseo ls -g -a --json` | On start, on Ctrl+G, every 3 s |
 | Stream the log | `paseo logs <id> --no-color --tail N -f` (plus `--filter tools` in tools-only view) | On attach; restarted by Ctrl+O |
 | Send a prompt | `paseo send <id> --no-wait --behavior steer\|interrupt "<text>"` | On Enter |

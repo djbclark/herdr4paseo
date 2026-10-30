@@ -20,7 +20,10 @@ def calls(tmp_path, monkeypatch):
     monkeypatch.setenv("FAKE_PASEO_CALLS", str(path))
     monkeypatch.setenv("PASEO_HOME", str(tmp_path / "home"))  # no credential, no real daemon
     monkeypatch.setenv("PASEO_HOST", "127.0.0.1:1")  # refused at once: slash completion stays off
+    monkeypatch.setenv("HERDR4PASEO_HISTORY", str(tmp_path / "history.json"))
     monkeypatch.delenv("FAKE_PASEO_SEND_FAIL", raising=False)
+    monkeypatch.delenv("FAKE_PASEO_LOGS_EXIT", raising=False)
+    monkeypatch.delenv("FAKE_PASEO_STATUS", raising=False)
     return path
 
 
@@ -259,3 +262,78 @@ async def test_missing_paseo_binary_is_reported_not_a_crash(calls, monkeypatch):
     async with app.run_test() as pilot:
         await settle(pilot, app, "cannot run /nonexistent/paseo")
         assert "PASEO_BIN" in log_text(app)
+
+
+def stop_calls(path: Path) -> list[list[str]]:
+    return [c for c in recorded(path) if c[0] == "stop"]
+
+
+async def test_stop_confirms_then_stops_by_id(calls):
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await settle(pilot, app, "plain assistant line")
+        await pilot.press("ctrl+x")
+        await pilot.pause(0.3)
+        assert stop_calls(calls) == []  # nothing before confirming
+        await pilot.press("y")
+        await settle(pilot, app, "stopped alpha")
+    assert stop_calls(calls) == [["stop", AGENT_A]]
+
+
+async def test_declining_stop_does_nothing(calls):
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await settle(pilot, app, "plain assistant line")
+        await pilot.press("ctrl+x")
+        await pilot.pause(0.3)
+        await pilot.press("n")
+        await pilot.pause(0.3)
+    assert stop_calls(calls) == []
+
+
+async def test_history_persists_across_runs(calls):
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await settle(pilot, app, "plain assistant line")
+        await pilot.press(*"remember", "enter")
+        await pilot.pause(0.3)
+    again = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    async with again.run_test() as pilot:
+        await settle(pilot, again, "plain assistant line")
+        await pilot.press("ctrl+p")
+        assert again.query_one("#prompt", PromptArea).text == "remember"
+
+
+async def test_stream_end_reconnects(calls, monkeypatch):
+    monkeypatch.setattr("herdr4paseo.app.RECONNECT_SECONDS", 0.1)
+    monkeypatch.setenv("FAKE_PASEO_LOGS_EXIT", "1")
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await settle(pilot, app, "reconnecting")
+        for _ in range(100):
+            await pilot.pause(0.05)
+            if sum(c[0] == "logs" for c in recorded(calls)) >= 2:
+                break
+    assert sum(c[0] == "logs" for c in recorded(calls)) >= 2
+
+
+async def test_idle_transition_rings_and_notes(calls, monkeypatch):
+    monkeypatch.setattr("herdr4paseo.app.STATUS_POLL_SECONDS", 0.1)
+    rings = []
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    monkeypatch.setattr(app, "bell", lambda: rings.append(1))
+    async with app.run_test() as pilot:
+        await settle(pilot, app, "plain assistant line")
+        monkeypatch.setenv("FAKE_PASEO_STATUS", "idle")
+        await settle(pilot, app, "alert: agent idle")
+    assert rings
+
+
+async def test_picker_filters_by_cwd_and_picks(calls):
+    app = Herdr4PaseoApp(None, tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await pilot.pause(0.5)
+        assert "~/src/b" in app.screen.query_one("#pick-list").get_option_at_index(1).prompt
+        await pilot.press(*"src/b", "enter")
+        await settle(pilot, app, "plain assistant line")
+        assert app.title == "beta (bbbbbbb)"

@@ -22,7 +22,7 @@ Type a message and press Enter. What happens depends on the send behaviour shown
 
 Ctrl+T switches between them. Start in `interrupt` with `--behavior interrupt`. If the send fails, your text stays in the box and the error is printed in the log, so nothing you typed is lost.
 
-Use Ctrl+J or Shift+Enter for a multi-line prompt. Ctrl+P and Ctrl+N recall earlier prompts from this session.
+Use Ctrl+J or Shift+Enter for a multi-line prompt. Ctrl+P and Ctrl+N recall earlier prompts. History is saved (last 200) in `~/.local/state/herdr4paseo/history.json`, shared by all agents; `HERDR4PASEO_HISTORY` overrides the path.
 
 ## 3. Answer permission requests
 
@@ -48,7 +48,7 @@ If the command list cannot be loaded, the log shows `slash completion unavailabl
 
 ## 5. Switch agents
 
-Press Ctrl+G, pick an agent with the arrow keys and Enter (Escape cancels). The log and slash commands switch to the new agent. The previous agent keeps running.
+Press Ctrl+G, type to filter (every word must match the id, status, name, provider or directory), pick with the arrow keys and Enter (Escape cancels). Each row shows the agent's directory. The log and slash commands switch to the new agent. The previous agent keeps running.
 
 ## 6. Use a different daemon
 
@@ -66,10 +66,16 @@ Slash suggestions connect to the same daemon. The local credential file is only 
 | --- | --- |
 | `paseo ls failed (rc=...)` in the log | The `paseo` CLI could not reach the daemon. Check `paseo ls` works in the same shell and that `PASEO_HOST` and `PASEO_HOME` match. |
 | `no agent selected; Ctrl+G to pick one` | The id you gave matched nothing or matched more than one agent. Use a longer prefix or pick from the list. |
-| `log stream ended (rc=...); Ctrl+G to reattach` | `paseo logs -f` exited, for example the daemon restarted. Press Ctrl+G and choose the agent again. |
+| `log stream ended (rc=...); reconnecting in 3s` | `paseo logs -f` exited, for example the daemon restarted. It reattaches by itself every 3 s, clearing the view and re-reading the last `--tail` entries. |
 | `send failed (rc=...)` | The `paseo send` error is printed after it. Your text is still in the box. |
 | `slash completion unavailable (...)` | The WebSocket lookup failed; the reason is in the brackets. Typed commands still send. |
 | Ctrl+A or Ctrl+D does nothing special | They only act on permissions while a request is pending. |
 | A key does nothing inside Herdr | The multiplexer may capture it before the app sees it. Check Herdr's own key settings. |
 
 If the `paseo` executable is not on `PATH`, set `PASEO_BIN` to its full path.
+
+## Stopping an agent and alerts
+
+Ctrl+X asks for confirmation (y or n), then runs `paseo stop <id>` for the shown agent. Unlike quitting, this ends the agent's work.
+
+The terminal bell rings, and a yellow `alert:` line is logged, when the shown agent goes from running to idle or a new permission request appears. Only changes alert, not a steady state. Whether a bell becomes a Herdr notification depends on your terminal and Herdr settings.
