@@ -48,7 +48,7 @@ Find an agent id with `paseo ls -g -a`. Type a prompt and press Enter to send it
 | --- | --- | --- |
 | `agent` | pick from a list | Agent id, short id or unambiguous id prefix |
 | `--tail N` | 50 | Log entries to show when attaching |
-| `--behavior steer\|interrupt` | `steer` | How a send treats a turn that is still running. `steer` queues your text for the agent; `interrupt` stops the turn and redirects it. |
+| `--behavior steer\|interrupt` | `steer` | How a send treats a turn that is still running. `interrupt` stops the turn and redirects it (Paseo: "stop and do this instead"); `steer` is the non-interrupting send, and Paseo's docs do not describe it further. |
 
 ## Keys
 

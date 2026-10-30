@@ -17,8 +17,8 @@ Type a message and press Enter. What happens depends on the send behaviour shown
 
 | Behaviour | Effect on a running turn |
 | --- | --- |
-| `steer` (default) | The text is queued for the agent as guidance. The current turn is not cut short. |
-| `interrupt` | The current turn is stopped and your text becomes the next instruction. |
+| `steer` (default) | The non-interrupting send. Paseo's CLI docs do not say more about how the agent takes it up; the current turn is not stopped. |
+| `interrupt` | The current turn is stopped and your text is what the agent does instead (Paseo: "stop and do this instead"). |
 
 Ctrl+T switches between them. Start in `interrupt` with `--behavior interrupt`. If the send fails, your text stays in the box and the error is printed in the log, so nothing you typed is lost.
 
