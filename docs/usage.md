@@ -17,7 +17,7 @@ Type a message and press Enter. What happens depends on the send behaviour shown
 
 | Behaviour | Effect on a running turn |
 | --- | --- |
-| `steer` (default) | The non-interrupting send. Paseo's CLI docs do not say more about how the agent takes it up; the current turn is not stopped. |
+| `steer` (default here) | Steers the running turn. Paseo's CLI docs: if steering is unavailable, the running turn is interrupted and replaced. (Plain `paseo send` defaults to interrupt; this tool defaults to steer.) |
 | `interrupt` | The current turn is stopped and your text is what the agent does instead (Paseo: "stop and do this instead"). |
 
 Ctrl+T switches between them. Start in `interrupt` with `--behavior interrupt`. If the send fails, your text stays in the box and the error is printed in the log, so nothing you typed is lost.
@@ -79,3 +79,7 @@ If the `paseo` executable is not on `PATH`, set `PASEO_BIN` to its full path.
 Ctrl+X asks for confirmation (y or n), then runs `paseo stop <id>` for the shown agent. Unlike quitting, this ends the agent's work.
 
 The terminal bell rings, and a yellow `alert:` line is logged, when the shown agent goes from running to idle or a new permission request appears. Only changes alert, not a steady state. Whether a bell becomes a Herdr notification depends on your terminal and Herdr settings.
+
+## Starting a new agent
+
+Ctrl+R opens a small form: a prompt (required), a directory (starts as the directory herdr4paseo runs in) and an optional provider such as `codex`. Enter runs `paseo run --no-wait --quiet [--provider P] <prompt>` in that directory, then attaches to the new agent by the id Paseo prints. A bare `paseo run` creates a local workspace for the directory; worktrees, models and output schemas are not offered here, use the `paseo` CLI for those.

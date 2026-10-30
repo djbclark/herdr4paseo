@@ -13,6 +13,7 @@ from herdr4paseo.core import (
     parse_permissions,
     permit_argv,
     permit_ls_argv,
+    run_argv,
     save_history,
     send_argv,
     should_alert,
@@ -156,3 +157,9 @@ def test_history_round_trip_limit_and_bad_files(tmp_path):
 def test_stop_argv_targets_one_agent(monkeypatch):
     monkeypatch.setenv("PASEO_BIN", "paseo")
     assert stop_argv("abc") == ["paseo", "stop", "abc"]
+
+
+def test_run_argv_is_quiet_nowait_and_guards_leading_dash(monkeypatch):
+    monkeypatch.setenv("PASEO_BIN", "paseo")
+    assert run_argv("do it") == ["paseo", "run", "--no-wait", "--quiet", "do it"]
+    assert run_argv("-x", "codex") == ["paseo", "run", "--no-wait", "--quiet", "--provider", "codex", " -x"]

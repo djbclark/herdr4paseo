@@ -23,6 +23,7 @@ def calls(tmp_path, monkeypatch):
     monkeypatch.setenv("HERDR4PASEO_HISTORY", str(tmp_path / "history.json"))
     monkeypatch.delenv("FAKE_PASEO_SEND_FAIL", raising=False)
     monkeypatch.delenv("FAKE_PASEO_LOGS_EXIT", raising=False)
+    monkeypatch.delenv("FAKE_PASEO_RUN_FAIL", raising=False)
     monkeypatch.delenv("FAKE_PASEO_STATUS", raising=False)
     return path
 
@@ -337,3 +338,56 @@ async def test_picker_filters_by_cwd_and_picks(calls):
         await pilot.press(*"src/b", "enter")
         await settle(pilot, app, "plain assistant line")
         assert app.title == "beta (bbbbbbb)"
+
+
+async def type_into(pilot, app, widget_id: str, text: str) -> None:
+    app.screen.query_one(widget_id).value = text
+    await pilot.pause(0.05)
+
+
+async def test_new_agent_runs_in_directory_then_attaches(calls, tmp_path):
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await settle(pilot, app, "plain assistant line")
+        await pilot.press("ctrl+r")
+        await pilot.pause(0.3)
+        await type_into(pilot, app, "#new-prompt", "build it")
+        await type_into(pilot, app, "#new-dir", str(tmp_path))
+        await type_into(pilot, app, "#new-provider", "codex")
+        await pilot.press("enter")
+        for _ in range(100):
+            await pilot.pause(0.05)
+            if app.title == "beta (bbbbbbb)":
+                break
+        assert app.title == "beta (bbbbbbb)"
+    rec = recorded(calls)
+    run = next(c for c in rec if c[0] == "run")
+    assert run == ["run", "--no-wait", "--quiet", "--provider", "codex", "build it"]
+    assert ["cwd", str(tmp_path.resolve())] in rec or ["cwd", str(tmp_path)] in rec
+
+
+async def test_new_agent_failure_is_reported_and_keeps_current_agent(calls, monkeypatch):
+    monkeypatch.setenv("FAKE_PASEO_RUN_FAIL", "1")
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await settle(pilot, app, "plain assistant line")
+        await pilot.press("ctrl+r")
+        await pilot.pause(0.3)
+        await type_into(pilot, app, "#new-prompt", "x")
+        await pilot.press("enter")
+        await settle(pilot, app, "run failed")
+        assert app.title == "alpha (aaaaaaa)"
+
+
+async def test_new_agent_needs_a_prompt_and_escape_cancels(calls):
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await settle(pilot, app, "plain assistant line")
+        await pilot.press("ctrl+r")
+        await pilot.pause(0.3)
+        await pilot.press("enter")  # empty prompt: stays open
+        await pilot.pause(0.2)
+        assert app.screen.query("#new-prompt")
+        await pilot.press("escape")
+        await pilot.pause(0.2)
+    assert not any(c[0] == "run" for c in recorded(calls))

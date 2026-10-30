@@ -48,7 +48,7 @@ Find an agent id with `paseo ls -g -a`. Type a prompt and press Enter to send it
 | --- | --- | --- |
 | `agent` | pick from a list | Agent id, short id or unambiguous id prefix |
 | `--tail N` | 50 | Log entries to show when attaching |
-| `--behavior steer\|interrupt` | `steer` | How a send treats a turn that is still running. `interrupt` stops the turn and redirects it (Paseo: "stop and do this instead"); `steer` is the non-interrupting send, and Paseo's docs do not describe it further. |
+| `--behavior steer\|interrupt` | `steer` | How a send treats a turn that is still running. `interrupt` stops the turn and redirects it; `steer` steers the running turn and, per Paseo, falls back to interrupting it if steering is unavailable. |
 
 ## Keys
 
@@ -61,6 +61,7 @@ Find an agent id with `paseo ls -g -a`. Type a prompt and press Enter to send it
 | Ctrl+O | Toggle a tools-only log view |
 | Ctrl+G | Switch agent |
 | Ctrl+P, Ctrl+N | Prompt history, previous and next (kept between runs) |
+| Ctrl+R | Start a new agent (`paseo run --no-wait`): prompt, directory, optional provider; then attaches to it |
 | Ctrl+X | Stop the agent (`paseo stop`), after a y/n confirmation |
 | Ctrl+A, Ctrl+D | Allow or deny the agent's pending permission requests (only active while some are pending; asks to confirm) |
 | Ctrl+Q | Quit (the agent keeps running) |

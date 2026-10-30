@@ -30,6 +30,13 @@ elif cmd == "logs":
     time.sleep(30)  # `-f` follows until killed
 elif cmd == "permit" and sys.argv[2] == "ls":
     print(os.environ.get("FAKE_PASEO_PERMITS", "[]"))
+elif cmd == "run":
+    if os.environ.get("FAKE_PASEO_RUN_FAIL"):
+        print("no provider", file=sys.stderr)
+        sys.exit(1)
+    with open(os.environ["FAKE_PASEO_CALLS"], "a") as more:
+        more.write(json.dumps(["cwd", os.getcwd()]) + "\n")
+    print("bbbbbbb2-0000-0000-0000-000000000002")
 elif cmd == "send":
     if os.environ.get("FAKE_PASEO_SEND_FAIL"):
         print("boom", file=sys.stderr)

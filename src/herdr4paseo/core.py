@@ -205,6 +205,19 @@ def permit_argv(decision: str, agent_id: str, request_id: str) -> list[str]:
     return [paseo_bin(), "permit", decision, agent_id, request_id]
 
 
+def run_argv(prompt: str, provider: str = "") -> list[str]:
+    """Start an agent without waiting; --quiet makes paseo print just the new agent's id.
+
+    The working directory comes from where the process runs, not a flag.
+    """
+    if prompt.startswith("-"):
+        prompt = " " + prompt  # same flag-lookalike guard as send_argv
+    argv = [paseo_bin(), "run", "--no-wait", "--quiet"]
+    if provider:
+        argv += ["--provider", provider]
+    return argv + [prompt]
+
+
 def stop_argv(agent_id: str) -> list[str]:
     return [paseo_bin(), "stop", agent_id]
 

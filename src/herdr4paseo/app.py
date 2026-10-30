@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import os
 from collections.abc import Callable
 
 from textual import events, work
@@ -38,6 +39,7 @@ from .core import (
     parse_permissions,
     permit_argv,
     permit_ls_argv,
+    run_argv,
     save_history,
     send_argv,
     should_alert,
@@ -117,6 +119,30 @@ class PickAgent(ModalScreen[str]):
         self.dismiss("")
 
 
+class NewAgent(ModalScreen[tuple[str, str, str]]):
+    """Prompt, directory and optional provider for `paseo run`; Enter submits, Escape cancels."""
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="new-box"):
+            yield Static("Start a new agent", markup=False)
+            yield Input(placeholder="prompt (required)", id="new-prompt")
+            yield Input(value=os.getcwd(), placeholder="directory", id="new-dir")
+            yield Input(placeholder="provider, e.g. codex (blank: Paseo's default)", id="new-provider")
+            yield Static("Enter starts it, Escape cancels", markup=False)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        event.stop()
+        prompt = self.query_one("#new-prompt", Input).value.strip()
+        if prompt:
+            directory = os.path.expanduser(self.query_one("#new-dir", Input).value.strip() or os.getcwd())
+            self.dismiss((prompt, directory, self.query_one("#new-provider", Input).value.strip()))
+
+    def action_cancel(self) -> None:
+        self.dismiss(("", "", ""))
+
+
 class ConfirmStop(ModalScreen[bool]):
     """y stops the agent; n or Escape cancels."""
 
@@ -165,10 +191,11 @@ class ConfirmPermits(ModalScreen[bool]):
         self.dismiss(answer)
 
 
-async def run_paseo(argv: list[str]) -> tuple[int, str, str]:
+async def run_paseo(argv: list[str], cwd: str | None = None) -> tuple[int, str, str]:
     try:
         proc = await asyncio.create_subprocess_exec(
             *argv,
+            cwd=cwd,
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -187,16 +214,18 @@ class Herdr4PaseoApp(App[None]):
     #permits.hidden { display: none; }
     #slash { height: auto; max-height: 9; padding: 0 1; background: $panel; }
     #slash.hidden { display: none; }
-    PickAgent, ConfirmPermits, ConfirmStop { align: center middle; }
+    PickAgent, ConfirmPermits, ConfirmStop, NewAgent { align: center middle; }
     #confirm-box { width: 80%; height: auto; border: round $warning; padding: 1 2; background: $surface; }
     #pick-box { width: 90%; height: 70%; border: round $primary; }
     #pick-list { height: 1fr; }
+    #new-box { width: 90%; height: auto; border: round $primary; padding: 1 2; background: $surface; }
     """
     ENABLE_COMMAND_PALETTE = False  # Ctrl+P is prompt history here
     BINDINGS = [
         Binding("ctrl+t", "toggle_behavior", "steer/interrupt"),
         Binding("ctrl+o", "toggle_tools", "tools only"),
         Binding("ctrl+g", "switch_agent", "agents"),
+        Binding("ctrl+r", "new_agent", "new agent", priority=True),
         # Priority beats the prompt's own Ctrl+X (cut); a confirmation guards the stop.
         Binding("ctrl+x", "stop_agent", "stop agent", priority=True),
         # Priority beats the prompt's own Ctrl+A/Ctrl+D, but check_action only enables
@@ -443,6 +472,22 @@ class Herdr4PaseoApp(App[None]):
             result = "ok" if code == 0 else f"failed (rc={code}): {err.strip()}"
             self._note(f"permit {decision} {permit.label}: {result}", "dim" if code == 0 else "bold red")
         await self._refresh_permits()
+
+    @work(exclusive=True, group="new")  # push_screen_wait only runs inside a worker
+    async def action_new_agent(self) -> None:
+        prompt, directory, provider = await self.push_screen_wait(NewAgent())
+        if not prompt:
+            return
+        if not os.path.isdir(directory):
+            self._note(f"new agent: {directory} is not a directory", "bold red")
+            return
+        code, out, err = await run_paseo(run_argv(prompt, provider), cwd=directory)
+        agent_id = out.strip().splitlines()[-1] if out.strip() else ""
+        if code != 0 or not agent_id:
+            self._note(f"run failed (rc={code}): {(err or out).strip()}", "bold red")
+            return
+        self._note(f"started agent {agent_id[:7]} in {directory}", "dim")
+        self._choose_agent(agent_id)
 
     @work(exclusive=True, group="stop")  # push_screen_wait only runs inside a worker
     async def action_stop_agent(self) -> None:
