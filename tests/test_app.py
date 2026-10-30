@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from textual.widgets import RichLog
 
-from paseo_pane.app import PaneApp, PromptArea
+from herdr4paseo.app import PaneApp, PromptArea
 
 FAKE = Path(__file__).with_name("fake_paseo.py")
 

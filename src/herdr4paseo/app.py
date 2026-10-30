@@ -1,4 +1,4 @@
-"""paseo-pane: a log view plus prompt box for one Paseo agent, built on the `paseo` CLI.
+"""herdr4paseo: a log view plus prompt box for one Paseo agent, built on the `paseo` CLI.
 
 It owns nothing. The agent keeps running in the Paseo daemon, so quitting never
 interrupts it, and the Paseo app can be attached to the same agent at the same time.
@@ -318,7 +318,7 @@ class PaneApp(App[None]):
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="paseo-pane",
+        prog="herdr4paseo",
         description="Log view and prompt box for one Paseo agent, via the paseo CLI.",
     )
     parser.add_argument("agent", nargs="?", help="agent id, short id or prefix; omit to pick from a list")

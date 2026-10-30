@@ -1,8 +1,8 @@
-# paseo-pane
+# herdr4paseo
 
 A small terminal UI that shows one [Paseo](https://paseo.sh) agent's log with a prompt box under it. It is built entirely on the `paseo` CLI (`paseo logs -f` for output, `paseo send` for input), so it works anywhere a terminal does, including a [Herdr](https://herdr.dev) pane.
 
-The agent keeps running in the Paseo daemon. `paseo-pane` is only a client: quitting it never interrupts the agent, and the Paseo desktop or mobile app can be attached to the same agent at the same time.
+The agent keeps running in the Paseo daemon. `herdr4paseo` is only a client: quitting it never interrupts the agent, and the Paseo desktop or mobile app can be attached to the same agent at the same time.
 
 ## Why
 
@@ -13,15 +13,15 @@ Paseo agents belong to the Paseo daemon, and `paseo attach` is a read-only strea
 Needs Python 3.11+ and the `paseo` CLI on `PATH`.
 
 ```sh
-uv tool install git+https://github.com/djbclark/paseo-pane
+uv tool install git+https://github.com/djbclark/herdr4paseo
 ```
 
 ## Use
 
 ```sh
-paseo-pane              # pick an agent from a list
-paseo-pane 7dba08f      # attach to an agent by id, short id or unambiguous prefix
-paseo-pane --tail 200 --behavior interrupt 7dba08f
+herdr4paseo              # pick an agent from a list
+herdr4paseo 7dba08f      # attach to an agent by id, short id or unambiguous prefix
+herdr4paseo --tail 200 --behavior interrupt 7dba08f
 ```
 
 | Key | Action |

@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from paseo_pane.core import (
+from herdr4paseo.core import (
     Agent,
     find_agent,
     logs_argv,
