@@ -111,7 +111,7 @@ async def run_paseo(argv: list[str]) -> tuple[int, str, str]:
     return proc.returncode or 0, out.decode(errors="replace"), err.decode(errors="replace")
 
 
-class PaneApp(App[None]):
+class Herdr4PaseoApp(App[None]):
     CSS = """
     #log { height: 1fr; }
     #prompt { height: 6; border: round $primary; }
@@ -330,7 +330,7 @@ def main() -> None:
         help="how sends treat a running turn (default steer; Ctrl+T toggles)",
     )
     args = parser.parse_args()
-    PaneApp(args.agent, tail=args.tail, behavior=args.behavior).run()
+    Herdr4PaseoApp(args.agent, tail=args.tail, behavior=args.behavior).run()
 
 
 if __name__ == "__main__":

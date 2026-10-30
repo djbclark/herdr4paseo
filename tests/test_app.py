@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from textual.widgets import RichLog
 
-from herdr4paseo.app import PaneApp, PromptArea
+from herdr4paseo.app import Herdr4PaseoApp, PromptArea
 
 FAKE = Path(__file__).with_name("fake_paseo.py")
 
@@ -25,7 +25,7 @@ def recorded(path: Path) -> list[list[str]]:
     return [json.loads(line) for line in path.read_text().splitlines()]
 
 
-def log_text(app: PaneApp) -> str:
+def log_text(app: Herdr4PaseoApp) -> str:
     return "\n".join(line.text for line in app.query_one("#log", RichLog).lines)
 
 
@@ -38,7 +38,7 @@ async def settle(pilot, app, needle: str) -> None:
 
 
 async def test_attach_streams_log_and_status(calls):
-    app = PaneApp("aaaaaaa", tail=5, behavior="steer")
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
     async with app.run_test() as pilot:
         await settle(pilot, app, "plain assistant line")
         assert "[User] hello there" in log_text(app)
@@ -50,7 +50,7 @@ async def test_attach_streams_log_and_status(calls):
 
 
 async def test_enter_sends_with_current_behavior_and_clears(calls):
-    app = PaneApp("aaaaaaa", tail=5, behavior="steer")
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
     async with app.run_test() as pilot:
         await settle(pilot, app, "plain assistant line")
         await pilot.press("ctrl+t")  # steer -> interrupt
@@ -63,7 +63,7 @@ async def test_enter_sends_with_current_behavior_and_clears(calls):
 
 async def test_failed_send_keeps_text_and_reports(calls, monkeypatch):
     monkeypatch.setenv("FAKE_PASEO_SEND_FAIL", "1")
-    app = PaneApp("aaaaaaa", tail=5, behavior="steer")
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
     async with app.run_test() as pilot:
         await settle(pilot, app, "plain assistant line")
         await pilot.press(*"keep me", "enter")
@@ -72,7 +72,7 @@ async def test_failed_send_keeps_text_and_reports(calls, monkeypatch):
 
 
 async def test_ctrl_j_inserts_newline_instead_of_sending(calls):
-    app = PaneApp("aaaaaaa", tail=5, behavior="steer")
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
     async with app.run_test() as pilot:
         await settle(pilot, app, "plain assistant line")
         await pilot.press("a", "ctrl+j", "b")
@@ -81,7 +81,7 @@ async def test_ctrl_j_inserts_newline_instead_of_sending(calls):
 
 
 async def test_tools_only_toggle_restarts_stream_with_filter(calls):
-    app = PaneApp("aaaaaaa", tail=5, behavior="steer")
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
     async with app.run_test() as pilot:
         await settle(pilot, app, "plain assistant line")
         await pilot.press("ctrl+o")
@@ -92,7 +92,7 @@ async def test_tools_only_toggle_restarts_stream_with_filter(calls):
 
 
 async def test_history_recall(calls):
-    app = PaneApp("aaaaaaa", tail=5, behavior="steer")
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
     async with app.run_test() as pilot:
         await settle(pilot, app, "plain assistant line")
         await pilot.press(*"first", "enter")
@@ -134,7 +134,7 @@ def pending(calls, monkeypatch):
 
 
 async def test_no_pending_means_no_banner_and_prompt_keeps_ctrl_a(calls):
-    app = PaneApp("aaaaaaa", tail=5, behavior="steer")
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
     async with app.run_test() as pilot:
         await settle(pilot, app, "plain assistant line")
         assert app.query_one("#permits").has_class("hidden")
@@ -144,14 +144,14 @@ async def test_no_pending_means_no_banner_and_prompt_keeps_ctrl_a(calls):
 
 
 async def test_banner_lists_only_this_agents_requests(pending, calls):
-    app = PaneApp("aaaaaaa", tail=5, behavior="steer")
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
     async with app.run_test() as pilot:
         await banner_visible(pilot, app)
         assert [p.id for p in app.permits] == ["req11111-aaaa", "req22222-bbbb"]
 
 
 async def test_allow_confirms_then_answers_each_shown_request_by_id(pending, calls):
-    app = PaneApp("aaaaaaa", tail=5, behavior="steer")
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
     async with app.run_test() as pilot:
         await banner_visible(pilot, app)
         await pilot.press("ctrl+a")
@@ -166,7 +166,7 @@ async def test_allow_confirms_then_answers_each_shown_request_by_id(pending, cal
 
 
 async def test_declining_confirmation_answers_nothing(pending, calls):
-    app = PaneApp("aaaaaaa", tail=5, behavior="steer")
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
     async with app.run_test() as pilot:
         await banner_visible(pilot, app)
         await pilot.press("ctrl+a")
@@ -177,7 +177,7 @@ async def test_declining_confirmation_answers_nothing(pending, calls):
 
 
 async def test_deny_answers_by_id(pending, calls):
-    app = PaneApp("aaaaaaa", tail=5, behavior="steer")
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
     async with app.run_test() as pilot:
         await banner_visible(pilot, app)
         await pilot.press("ctrl+d")
