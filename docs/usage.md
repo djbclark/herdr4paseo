@@ -82,4 +82,4 @@ The terminal bell rings, and a yellow `alert:` line is logged, when the shown ag
 
 ## Starting a new agent
 
-Ctrl+R opens a small form: a prompt (required), a directory (starts as the directory herdr4paseo runs in) and an optional provider such as `codex`. Enter runs `paseo run --no-wait --quiet [--provider P] <prompt>` in that directory, then attaches to the new agent by the id Paseo prints. A bare `paseo run` creates a local workspace for the directory; worktrees, models and output schemas are not offered here, use the `paseo` CLI for those.
+Ctrl+R opens a small form: a prompt (required), a directory (starts as the directory herdr4paseo runs in) and a provider, prefilled with the current agent's (`paseo run` refuses to start without one; `provider/model` also works, and `paseo provider ls` lists them). Enter runs `paseo run --no-wait --quiet --provider P <prompt>` in that directory, then attaches to the new agent by the id Paseo prints. A bare `paseo run` creates a local workspace for the directory; worktrees, models and output schemas are not offered here, use the `paseo` CLI for those.

@@ -353,6 +353,7 @@ async def test_new_agent_runs_in_directory_then_attaches(calls, tmp_path):
         await pilot.pause(0.3)
         await type_into(pilot, app, "#new-prompt", "build it")
         await type_into(pilot, app, "#new-dir", str(tmp_path))
+        assert app.screen.query_one("#new-provider").value == "claude/x"  # the current agent's
         await type_into(pilot, app, "#new-provider", "codex")
         await pilot.press("enter")
         for _ in range(100):
@@ -386,6 +387,22 @@ async def test_new_agent_needs_a_prompt_and_escape_cancels(calls):
         await pilot.press("ctrl+r")
         await pilot.pause(0.3)
         await pilot.press("enter")  # empty prompt: stays open
+        await pilot.pause(0.2)
+        assert app.screen.query("#new-prompt")
+        await pilot.press("escape")
+        await pilot.pause(0.2)
+    assert not any(c[0] == "run" for c in recorded(calls))
+
+
+async def test_new_agent_needs_a_provider(calls):
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await settle(pilot, app, "plain assistant line")
+        await pilot.press("ctrl+r")
+        await pilot.pause(0.3)
+        await type_into(pilot, app, "#new-prompt", "x")
+        await type_into(pilot, app, "#new-provider", "")
+        await pilot.press("enter")  # no provider: stays open
         await pilot.pause(0.2)
         assert app.screen.query("#new-prompt")
         await pilot.press("escape")

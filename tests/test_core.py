@@ -161,5 +161,5 @@ def test_stop_argv_targets_one_agent(monkeypatch):
 
 def test_run_argv_is_quiet_nowait_and_guards_leading_dash(monkeypatch):
     monkeypatch.setenv("PASEO_BIN", "paseo")
-    assert run_argv("do it") == ["paseo", "run", "--no-wait", "--quiet", "do it"]
+    assert run_argv("do it", "claude") == ["paseo", "run", "--no-wait", "--quiet", "--provider", "claude", "do it"]
     assert run_argv("-x", "codex") == ["paseo", "run", "--no-wait", "--quiet", "--provider", "codex", " -x"]

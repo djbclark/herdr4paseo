@@ -8,3 +8,4 @@ Public repo: github.com/djbclark/herdr4paseo.
 3. Run tests with `uv run --group dev pytest -q` (through `~/ops/site-private/bin/bg`; the CI-first decision is recorded as local).
 4. Do not run `paseo --help` or other probing on the live daemon; read https://paseo.sh/docs/cli instead.
 5. Output formats of `paseo logs` and `paseo ls --json` were read from a live daemon on 2026-10-28; recheck if Paseo changes them.
+6. Checked live on 2026-10-30: `paseo permit deny <agent> <request id>` answers exactly one request and `paseo permit ls --json` has `id`, `agentId`, `agentShortId`, `name`, `description` (`-` when empty); `paseo run` fails with "Provider is required" without `--provider`. `permit allow` has the same argv shape but was not run live.

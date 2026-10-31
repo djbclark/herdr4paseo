@@ -61,7 +61,7 @@ Find an agent id with `paseo ls -g -a`. Type a prompt and press Enter to send it
 | Ctrl+O | Toggle a tools-only log view |
 | Ctrl+G | Switch agent |
 | Ctrl+P, Ctrl+N | Prompt history, previous and next (kept between runs) |
-| Ctrl+R | Start a new agent (`paseo run --no-wait`): prompt, directory, optional provider; then attaches to it |
+| Ctrl+R | Start a new agent (`paseo run --no-wait`): prompt, directory, provider (prefilled from the current agent); then attaches to it |
 | Ctrl+X | Stop the agent (`paseo stop`), after a y/n confirmation |
 | Ctrl+A, Ctrl+D | Allow or deny the agent's pending permission requests (only active while some are pending; asks to confirm) |
 | Ctrl+Q | Quit (the agent keeps running) |

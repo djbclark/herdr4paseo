@@ -120,24 +120,29 @@ class PickAgent(ModalScreen[str]):
 
 
 class NewAgent(ModalScreen[tuple[str, str, str]]):
-    """Prompt, directory and optional provider for `paseo run`; Enter submits, Escape cancels."""
+    """Prompt, directory and provider for `paseo run`; Enter submits, Escape cancels."""
 
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, provider: str) -> None:
+        super().__init__()
+        self._provider = provider
 
     def compose(self) -> ComposeResult:
         with Vertical(id="new-box"):
             yield Static("Start a new agent", markup=False)
             yield Input(placeholder="prompt (required)", id="new-prompt")
             yield Input(value=os.getcwd(), placeholder="directory", id="new-dir")
-            yield Input(placeholder="provider, e.g. codex (blank: Paseo's default)", id="new-provider")
+            yield Input(value=self._provider, placeholder="provider or provider/model, e.g. codex (required)", id="new-provider")
             yield Static("Enter starts it, Escape cancels", markup=False)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         event.stop()
         prompt = self.query_one("#new-prompt", Input).value.strip()
-        if prompt:
+        provider = self.query_one("#new-provider", Input).value.strip()
+        if prompt and provider:  # `paseo run` refuses to start without a provider
             directory = os.path.expanduser(self.query_one("#new-dir", Input).value.strip() or os.getcwd())
-            self.dismiss((prompt, directory, self.query_one("#new-provider", Input).value.strip()))
+            self.dismiss((prompt, directory, provider))
 
     def action_cancel(self) -> None:
         self.dismiss(("", "", ""))
@@ -475,7 +480,7 @@ class Herdr4PaseoApp(App[None]):
 
     @work(exclusive=True, group="new")  # push_screen_wait only runs inside a worker
     async def action_new_agent(self) -> None:
-        prompt, directory, provider = await self.push_screen_wait(NewAgent())
+        prompt, directory, provider = await self.push_screen_wait(NewAgent(self.agent.provider if self.agent else ""))
         if not prompt:
             return
         if not os.path.isdir(directory):
