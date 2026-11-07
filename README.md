@@ -101,6 +101,23 @@ uv run --group dev pytest -q
 
 The tests drive the app with a fake `paseo` executable (`tests/fake_paseo.py`, selected through `PASEO_BIN`) and a fake daemon WebSocket (`tests/fake_daemon.py`), so they never touch a real daemon.
 
+
+## Upstream artifacts
+
+1. [getpaseo/paseo Discussion #4070](https://github.com/getpaseo/paseo/discussions/4070) — request for a terminal front-end while Paseo owns the agent.
+
+
+## Related djbclark Herdr repos
+
+| Repo | Role |
+| --- | --- |
+| [djbclark/herdr](https://github.com/djbclark/herdr) | Fork of [herdrdev/herdr](https://github.com/herdrdev/herdr) |
+| [herdr-plain-line](https://github.com/djbclark/herdr-plain-line) | Local plugin: plain-English popup for tab/workspace rename and create |
+| [herdr-sleeper](https://github.com/djbclark/herdr-sleeper) | Plugin: sleep idle agent panes, wake later |
+| [herdr4paseo](https://github.com/djbclark/herdr4paseo) | Terminal UI to watch/steer a Paseo agent from a pane |
+| [paseo4herdr](https://github.com/djbclark/paseo4herdr) | Paseo plugin mirroring OMP agents that run in Herdr |
+
+
 ## License
 
 MIT
