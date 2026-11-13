@@ -19,6 +19,7 @@ from textual.containers import Vertical
 from textual.content import Content
 from textual.message import Message
 from textual.screen import ModalScreen
+from textual.theme import BUILTIN_THEMES, Theme
 from textual.widgets import Footer, Header, Input, OptionList, RichLog, Static, TextArea
 from textual.widgets.option_list import Option
 
@@ -26,6 +27,7 @@ from rich.text import Text
 
 from .core import (
     BEHAVIORS,
+    KANAGAWA,
     Agent,
     Command,
     LogStyler,
@@ -215,8 +217,26 @@ async def run_paseo(argv: list[str], cwd: str | None = None) -> tuple[int, str, 
     return proc.returncode or 0, out.decode(errors="replace"), err.decode(errors="replace")
 
 
-# Textual theme for the widgets (permits banner, dialogs, borders); the default one has a bright orange $warning.
-APP_THEME = "nord"
+# Textual theme for the widgets (permits banner, dialogs, borders). It is an ANSI theme, so the
+# background and plain text stay the terminal's own (as herdr does with `Color::Reset`), and
+# only the accents are set, to the same dark Kanagawa shades the log uses.
+APP_THEME = Theme(
+    name="herdr4paseo",
+    primary=KANAGAWA["blue"],
+    secondary=KANAGAWA["teal"],
+    warning=KANAGAWA["yellow"],
+    error=KANAGAWA["red"],
+    success=KANAGAWA["green"],
+    accent=KANAGAWA["mauve"],
+    foreground="ansi_default",
+    background="ansi_default",
+    surface="ansi_default",
+    panel="ansi_default",
+    boost="ansi_default",
+    dark=True,
+    variables=dict(BUILTIN_THEMES["ansi-dark"].variables),
+    ansi=True,
+)
 
 # Typed in the prompt, these quit herdr4paseo itself; the agent keeps running and never sees them.
 QUIT_COMMANDS = frozenset({"/quit", "/exit"})
@@ -224,9 +244,9 @@ QUIT_COMMANDS = frozenset({"/quit", "/exit"})
 
 class Herdr4PaseoApp(App[None]):
     CSS = """
-    #log { height: 1fr; }
+    #log { height: 1fr; scrollbar-size-vertical: 1; scrollbar-color: #363646; scrollbar-color-hover: #54546D; scrollbar-color-active: #54546D; scrollbar-background: ansi_default; scrollbar-background-hover: ansi_default; scrollbar-background-active: ansi_default; }
     #prompt { height: 6; border: round $primary; }
-    #permits { height: auto; background: $warning; color: $text; padding: 0 1; }
+    #permits { height: auto; color: $warning; text-style: bold; padding: 0 1; border-left: thick $warning; }
     #permits.hidden { display: none; }
     #slash { height: auto; max-height: 9; padding: 0 1; background: $panel; }
     #slash.hidden { display: none; }
@@ -279,7 +299,8 @@ class Herdr4PaseoApp(App[None]):
         yield Footer()
 
     async def on_mount(self) -> None:
-        self.theme = APP_THEME  # Textual's own Nord: muted $warning/$error/$primary for the banner and dialogs
+        self.register_theme(APP_THEME)
+        self.theme = APP_THEME.name
         prompt = self.query_one("#prompt", PromptArea)
         prompt.slash_handler = self.handle_slash_key
         prompt.focus()

@@ -522,3 +522,13 @@ async def test_notes_only_ask_style_for_known_tokens(calls, monkeypatch):
         await pilot.press(*"x", "enter")
         await settle(pilot, app, "send failed")
     assert "error.text" in asked
+
+
+async def test_app_theme_keeps_the_terminal_background(calls):
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await settle(pilot, app, "plain assistant line")
+        theme = app.current_theme
+        assert theme.name == "herdr4paseo" and theme.ansi  # ANSI theme: backgrounds are not repainted
+        assert theme.background == theme.surface == theme.panel == "ansi_default"
+        assert theme.warning == app_module.KANAGAWA["yellow"] and theme.error == app_module.KANAGAWA["red"]

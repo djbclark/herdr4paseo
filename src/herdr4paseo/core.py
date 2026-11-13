@@ -27,56 +27,62 @@ _FOLLOW_BANNER = re.compile(r"^--- Following logs \(last (\d+) entries; Ctrl\+C 
 # diff added/removed/context, markdown, syntax) is adapted from pi's theme tokens
 # (https://github.com/earendil-works/pi, MIT, (c) 2025 Mario Zechner,
 # packages/coding-agent/src/modes/interactive/theme/theme-tokens.ts). The colour values are the
-# Nord palette (https://www.nordtheme.com, MIT), as shipped by opencode
-# (https://github.com/sst/opencode, MIT, packages/tui/src/theme/assets/nord.json) and herdr's
-# built-in `nord` theme: desaturated, so nothing glares. They are hex, not the 16 ANSI names,
-# because the ANSI "yellow" and "red" render as bright orange and red in many terminal palettes;
-# Rich downgrades hex to 256 or 16 colours on a terminal that cannot show it. Meaning must also
-# survive NO_COLOR: tags stay in the text, diff lines keep their +/-, and the tag/thought/quote
-# tokens carry bold or italic, which Textual's NO_COLOR filter keeps.
-# The `status.*` tokens follow herdr's agent-state mapping (https://github.com/herdrdev/herdr,
-# Apache-2.0, src/client/shell.rs `status_color`: working yellow, blocked red, idle green) in Nord shades.
-_NORD_RED = "#BF616A"
-_NORD_YELLOW = "#EBCB8B"
-_NORD_GREEN = "#A3BE8C"
-_NORD_PURPLE = "#B48EAD"
-_NORD_CYAN = "#88C0D0"
-_NORD_TEAL = "#8FBCBB"
-_NORD_BLUE = "#81A1C1"
-_NORD_MUTED = "#8B95A7"  # opencode's Nord `textMuted`
-THEME: dict[str, str] = {
-    "user.tag": f"bold {_NORD_CYAN}",
-    "user.text": _NORD_CYAN,
-    "assistant.text": "",  # terminal default
-    "thought": f"italic {_NORD_MUTED}",
-    "tool.tag": f"bold {_NORD_YELLOW}",
-    "tool.detail": _NORD_TEAL,
-    "tool.result": _NORD_MUTED,
-    "tool.failed": f"bold {_NORD_RED}",  # reserved for a structured stream; `paseo logs` prints no results
-    "permission": f"bold #2E3440 on {_NORD_YELLOW}",
-    "error.tag": f"bold {_NORD_RED}",
-    "error.text": _NORD_RED,
-    "success": _NORD_GREEN,
-    "status": _NORD_PURPLE,
-    "meta": _NORD_MUTED,
-    "diff.add": _NORD_GREEN,
-    "diff.remove": _NORD_RED,
-    "diff.hunk": f"bold {_NORD_CYAN}",
-    "diff.context": _NORD_MUTED,
-    "md.heading": f"bold {_NORD_BLUE}",
-    "md.code": _NORD_PURPLE,
-    "md.fence": _NORD_MUTED,
-    "md.bullet": _NORD_PURPLE,
-    "md.quote": f"italic {_NORD_MUTED}",
-    "md.link": f"underline {_NORD_BLUE}",
-    "status.running": _NORD_YELLOW,
-    "status.idle": _NORD_GREEN,
-    "status.error": _NORD_RED,
-    "status.closed": _NORD_MUTED,
+# dark shades of herdr's built-in `kanagawa` palette (https://github.com/herdrdev/herdr,
+# Apache-2.0, src/app/state.rs `Palette::kanagawa`; the Kanagawa colours are MIT, rebelot/kanagawa.nvim).
+# Like herdr (`sidebar_bg: Color::Reset`) the app leaves the terminal's own background alone and
+# only darkens the text colours: a deep red and a dull gold instead of the bright red and orange
+# that the ANSI names give in many terminal palettes. They are hex; Rich downgrades them to 256
+# or 16 colours on a terminal that cannot show them. Meaning must also survive NO_COLOR: tags
+# stay in the text, diff lines keep their +/-, and the tag/thought/quote tokens carry bold or
+# italic, which Textual's NO_COLOR filter keeps.
+# The `status.*` tokens follow herdr's agent-state mapping (src/client/shell.rs `status_color`:
+# working yellow, blocked red, idle green).
+KANAGAWA = {
+    "red": "#C34043",
+    "yellow": "#C0A36E",
+    "green": "#76946A",
+    "mauve": "#957FB8",
+    "blue": "#7E9CD8",
+    "teal": "#7FB4CA",
+    "subtext": "#C8C3AA",
+    "overlay1": "#87867D",
+    "overlay0": "#727169",
+    "surface": "#2A2A37",
 }
-# Pygments style for lines inside a fenced code block (Pygments' own Nord style). Only its
-# foreground colour and bold/italic/underline are used: its background is dropped so code lines
-# sit on the same background as the rest of the log.
+_K = KANAGAWA
+THEME: dict[str, str] = {
+    "user.tag": f"bold {_K['blue']}",
+    "user.text": _K["blue"],
+    "assistant.text": "",  # terminal default
+    "thought": f"italic {_K['overlay1']}",
+    "tool.tag": f"bold {_K['yellow']}",
+    "tool.detail": _K["subtext"],
+    "tool.result": _K["overlay1"],
+    "tool.failed": f"bold {_K['red']}",  # reserved for a structured stream; `paseo logs` prints no results
+    "permission": f"bold {_K['yellow']}",
+    "error.tag": f"bold {_K['red']}",
+    "error.text": _K["red"],
+    "success": _K["green"],
+    "status": _K["mauve"],
+    "meta": _K["overlay0"],
+    "diff.add": _K["green"],
+    "diff.remove": _K["red"],
+    "diff.hunk": f"bold {_K['blue']}",
+    "diff.context": _K["overlay1"],
+    "md.heading": f"bold {_K['teal']}",
+    "md.code": _K["mauve"],
+    "md.fence": _K["overlay0"],
+    "md.bullet": _K["mauve"],
+    "md.quote": f"italic {_K['overlay1']}",
+    "md.link": f"underline {_K['blue']}",
+    "status.running": _K["yellow"],
+    "status.idle": _K["green"],
+    "status.error": _K["red"],
+    "status.closed": _K["overlay0"],
+}
+# Pygments style for lines inside a fenced code block (Pygments has no Kanagawa; its Nord style
+# is the closest muted one). Only its foreground colour and bold/italic/underline are used: its
+# background and default text colour are dropped so code sits on the terminal's own colours.
 CODE_THEME = "nord"
 
 # Bracketed lines `paseo logs` prints that are not tool calls. `Reconnected; ...` and
