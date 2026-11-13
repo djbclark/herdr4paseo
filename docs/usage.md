@@ -86,7 +86,7 @@ The log is coloured by meaning, on your terminal's own background, which herdr4p
 | `[Error]` | bold deep-red tag, deep-red text |
 | `[Tasks]` list | `- [x]` items green, `- [ ]` items plain |
 | `[Compacted]`, `[Reconnected; ...]`, `[Timeline replaced; ...]`, the follow banner, reconnect notes | grey |
-| Assistant text (no tag) | terminal default, with markdown headings (bold teal), list markers and inline code (muted purple), quotes (italic grey) and `[text](url)` links (underlined blue) |
+| Assistant text (no tag) | terminal default, with markdown headings (bold teal), list markers and inline code (muted purple), quotes (italic grey) and the text of `[text](url)` links (underlined blue; the brackets and the URL stay uncoloured) |
 | Fenced code in assistant text | `diff` and `patch` fences: green `+`, red `-`, bold blue `@@`, grey context; other fences are highlighted with Pygments' Nord style by the fence's language (Pygments has no Kanagawa), keeping your terminal's own foreground and background |
 | herdr4paseo's own notes | deep red for failures, green for started and permit answered, purple for stopped, grey for information, bold dull gold for `alert:` |
 | Agent status (header and picker) | running yellow, idle green, error red, closed or archived grey (the same mapping as herdr) |

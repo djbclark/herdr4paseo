@@ -145,7 +145,9 @@ def test_tag_styling_by_kind():
 
 def test_markdown_link_at_line_start_is_not_a_tag():
     link = style_line("[foo](http://x) rest")
-    assert style_at(link, 1) == tok("md.link")
+    assert style_at(link, 1) == tok("md.link") and style_at(link, 3) == tok("md.link")  # the label
+    assert style_at(link, 0) == Style.null() and style_at(link, 4) == Style.null()  # the brackets
+    assert style_at(link, 7) == Style.null() and style_at(link, 14) == Style.null()  # the URL
     assert style_at(link, 17) == Style.null()
     assert style_line("[foo]bar").spans == []  # not followed by whitespace either
 

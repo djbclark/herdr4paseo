@@ -332,7 +332,7 @@ _HEADING = re.compile(r"^ {0,3}#{1,6}(?:\s|$)")
 _BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])(?=\s)")
 _QUOTE = re.compile(r"^\s*>")
 _INLINE_CODE = re.compile(r"`[^`\n]+`")
-_LINK = re.compile(r"\[[^\]\n]+\]\([^)\s]+\)")
+_LINK = re.compile(r"\[(?P<label>[^\]\n]+)\]\([^)\s]+\)")  # only the label is coloured, not the [](url) syntax
 _FENCE = re.compile(r"^\s*```\s*([\w+#.-]*)")
 _TASK = re.compile(r"^\s*- \[[ xX]\]")
 _TASK_DONE = re.compile(r"^\s*- \[[xX]\]")
@@ -447,7 +447,8 @@ class LogStyler:
             if bullet:
                 _style(text, "md.bullet", 0, bullet.end())
         text.highlight_regex(_INLINE_CODE, style_for("md.code"))
-        text.highlight_regex(_LINK, style_for("md.link"))
+        for link in _LINK.finditer(line):
+            _style(text, "md.link", *link.span("label"))
         return text
 
     def _in_fence(self, line: str, text: Text) -> Text:
