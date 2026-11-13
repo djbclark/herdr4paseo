@@ -215,6 +215,9 @@ async def run_paseo(argv: list[str], cwd: str | None = None) -> tuple[int, str, 
     return proc.returncode or 0, out.decode(errors="replace"), err.decode(errors="replace")
 
 
+# Textual theme for the widgets (permits banner, dialogs, borders); the default one has a bright orange $warning.
+APP_THEME = "nord"
+
 # Typed in the prompt, these quit herdr4paseo itself; the agent keeps running and never sees them.
 QUIT_COMMANDS = frozenset({"/quit", "/exit"})
 
@@ -276,6 +279,7 @@ class Herdr4PaseoApp(App[None]):
         yield Footer()
 
     async def on_mount(self) -> None:
+        self.theme = APP_THEME  # Textual's own Nord: muted $warning/$error/$primary for the banner and dialogs
         prompt = self.query_one("#prompt", PromptArea)
         prompt.slash_handler = self.handle_slash_key
         prompt.focus()

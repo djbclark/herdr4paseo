@@ -111,7 +111,7 @@ def test_style_line_colours_tag_and_body_by_token():
     assert style_at(user, 0) == tok("user.tag")
     assert style_at(user, 7) == tok("user.text")
     assert style_line("no tag here").spans == []
-    assert "red" in str(style_line("[Error] bad").spans[0].style)
+    assert str(style_line("[Error] bad").spans[0].style) == THEME["error.tag"]
 
 
 def test_every_theme_value_parses():
@@ -152,7 +152,7 @@ def test_markdown_link_at_line_start_is_not_a_tag():
 
 def test_continuation_lines_inherit_user_and_thought_but_not_tool_lines():
     _head, cont = lines("[Thought] a", "b")
-    assert style_at(cont, 0).italic and style_at(cont, 0).dim
+    assert style_at(cont, 0).italic  # italic, not colour alone, survives NO_COLOR
     _head, cont = lines("[User] a", "b")
     assert style_at(cont, 0) == tok("user.text")
     _head, prose = lines("[Shell] ls", "prose")

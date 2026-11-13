@@ -4,6 +4,7 @@ import stat
 from pathlib import Path
 
 import pytest
+from rich.style import Style
 from textual.widgets import RichLog
 
 from fake_daemon import serve
@@ -458,7 +459,7 @@ async def test_streamed_lines_carry_token_styles(calls):
     async with app.run_test() as pilot:
         await settle(pilot, app, "plain assistant line")
         tag = next(seg for seg in _segments(app, "[User]") if seg.text.startswith("[User]"))
-        assert tag.style.bold and tag.style.color.name == "cyan"
+        assert tag.style.bold and tag.style.color == Style.parse(THEME["user.tag"]).color
 
 
 @pytest.mark.parametrize("value", ["1", ""])
@@ -480,7 +481,7 @@ async def test_header_status_word_is_coloured(calls):
         assert content.plain == "alpha — running | send: steer | full log"
         start = content.plain.index("running")
         status = next(sp for sp in content.spans if (sp.start, sp.end) == (start, start + len("running")))
-        assert "yellow" in str(status.style)
+        assert str(status.style) == THEME["status.running"]
         assert app.format_title("alpha", "weird | x").plain == "alpha — weird | x"  # unknown status: Textual's own
 
 

@@ -76,26 +76,26 @@ If the `paseo` executable is not on `PATH`, set `PASEO_BIN` to its full path.
 
 ## Colours
 
-The log is coloured by meaning, using the 16 ANSI colour names, so it follows your terminal's palette.
+The log is coloured by meaning, using the muted [Nord](https://www.nordtheme.com) palette (as in opencode and herdr), not the terminal's ANSI colours, which many palettes render as a bright orange and red. The widgets (permits banner, dialogs, borders) use Textual's own `nord` theme.
 
 | What | Style |
 | --- | --- |
-| `[User]` tag and its text, including continuation lines | bold cyan tag, cyan text |
-| `[Thought]` lines | italic dim |
-| Tool calls (`[Shell]`, `[Read]`, MCP tool names, ...) | bold yellow tag, yellow summary, with paths and URLs underlined |
-| `[Error]` | bold red tag, red text |
+| `[User]` tag and its text, including continuation lines | bold soft-cyan tag, soft-cyan text |
+| `[Thought]` lines | italic grey |
+| Tool calls (`[Shell]`, `[Read]`, MCP tool names, ...) | bold soft-yellow tag, teal summary |
+| `[Error]` | bold muted-red tag, muted-red text |
 | `[Tasks]` list | `- [x]` items green, `- [ ]` items plain |
-| `[Compacted]`, `[Reconnected; ...]`, `[Timeline replaced; ...]`, the follow banner, reconnect notes | dim |
-| Assistant text (no tag) | terminal default, with markdown headings (bold yellow), list markers and inline code (magenta), quotes (italic dim) and `[text](url)` links (underlined blue) |
-| Fenced code in assistant text | `diff` and `patch` fences: green `+`, red `-`, bold cyan `@@`, dim context; other fences are highlighted with Pygments by the fence's language |
-| herdr4paseo's own notes | red for failures, green for started and permit answered, magenta for stopped, dim for information, black on yellow for `alert:` |
-| Agent status (header and picker) | running yellow, idle green, error red, closed or archived dim (the same mapping as herdr) |
+| `[Compacted]`, `[Reconnected; ...]`, `[Timeline replaced; ...]`, the follow banner, reconnect notes | grey |
+| Assistant text (no tag) | terminal default, with markdown headings (bold blue), list markers and inline code (muted purple), quotes (italic grey) and `[text](url)` links (underlined blue) |
+| Fenced code in assistant text | `diff` and `patch` fences: green `+`, red `-`, bold cyan `@@`, grey context; other fences are highlighted with Pygments' Nord style by the fence's language, keeping your terminal's own foreground and background |
+| herdr4paseo's own notes | muted red for failures, green for started and permit answered, purple for stopped, grey for information, dark on soft yellow for `alert:` |
+| Agent status (header and picker) | running yellow, idle green, error red, closed or archived grey (the same mapping as herdr) |
 
 Limits: `paseo logs` prints no tag for assistant text, so a multi-line `[User]` prompt followed directly by assistant text shows that text in the user colour until the next tag. It also prints no tool output or diffs, so only diffs the assistant writes in a fenced block are coloured. Colouring is per line, so a multi-line string inside a code fence may be highlighted imperfectly. Lines already shown keep their colours when the terminal theme changes; Ctrl+O twice re-reads the log.
 
-`NO_COLOR` turns colour off but keeps bold, italic and dim, so tags, `+`/`-` diff lines and the thought/assistant difference stay readable. Textual treats an empty `NO_COLOR=` as set as well (the [spec](https://no-color.org) says only a non-empty value counts), so `unset NO_COLOR` rather than blanking it.
+`NO_COLOR` turns colour off but keeps bold and italic, so tags, `+`/`-` diff lines and the thought/assistant difference stay readable. Textual treats an empty `NO_COLOR=` as set as well (the [spec](https://no-color.org) says only a non-empty value counts), so `unset NO_COLOR` rather than blanking it.
 
-`TEXTUAL_COLOR_SYSTEM` forces the depth: `standard` (16 colours), `256` or `truecolor`; the default is `auto`. The built-in styles are ANSI names and exact at 16 colours.
+`TEXTUAL_COLOR_SYSTEM` forces the depth: `standard` (16 colours), `256` or `truecolor`; the default is `auto`. The palette is hex: Rich downgrades it to the nearest 256 or 16 colours on a terminal that cannot show it, which is less muted at 16.
 
 herdr4paseo always runs `paseo logs --no-color` and does the colouring itself, so paseo's own colour setting does not matter.
 

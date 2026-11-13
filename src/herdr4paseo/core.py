@@ -11,6 +11,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from pygments.token import Token
+from rich.style import Style
 from rich.text import Text
 
 BEHAVIORS = ("steer", "interrupt")
@@ -24,45 +26,58 @@ _FOLLOW_BANNER = re.compile(r"^--- Following logs \(last (\d+) entries; Ctrl\+C 
 # Semantic style tokens. The vocabulary (user message, thinking text, tool title/output,
 # diff added/removed/context, markdown, syntax) is adapted from pi's theme tokens
 # (https://github.com/earendil-works/pi, MIT, (c) 2025 Mario Zechner,
-# packages/coding-agent/src/modes/interactive/theme/theme-tokens.ts). The values are Rich style
-# strings using the 16 ANSI colour names, so they follow the terminal's own palette and are exact
-# on 16-colour terminals. Meaning must also survive NO_COLOR: tags stay in the text, diff lines
-# keep their +/-, and the tag/thought tokens carry bold/italic/dim, which Textual's NO_COLOR
-# filter keeps.
-# The `status.*` tokens mirror herdr's agent-state colours (https://github.com/herdrdev/herdr,
-# Apache-2.0, src/client/shell.rs `status_color`), so both tools agree visually.
+# packages/coding-agent/src/modes/interactive/theme/theme-tokens.ts). The colour values are the
+# Nord palette (https://www.nordtheme.com, MIT), as shipped by opencode
+# (https://github.com/sst/opencode, MIT, packages/tui/src/theme/assets/nord.json) and herdr's
+# built-in `nord` theme: desaturated, so nothing glares. They are hex, not the 16 ANSI names,
+# because the ANSI "yellow" and "red" render as bright orange and red in many terminal palettes;
+# Rich downgrades hex to 256 or 16 colours on a terminal that cannot show it. Meaning must also
+# survive NO_COLOR: tags stay in the text, diff lines keep their +/-, and the tag/thought/quote
+# tokens carry bold or italic, which Textual's NO_COLOR filter keeps.
+# The `status.*` tokens follow herdr's agent-state mapping (https://github.com/herdrdev/herdr,
+# Apache-2.0, src/client/shell.rs `status_color`: working yellow, blocked red, idle green) in Nord shades.
+_NORD_RED = "#BF616A"
+_NORD_YELLOW = "#EBCB8B"
+_NORD_GREEN = "#A3BE8C"
+_NORD_PURPLE = "#B48EAD"
+_NORD_CYAN = "#88C0D0"
+_NORD_TEAL = "#8FBCBB"
+_NORD_BLUE = "#81A1C1"
+_NORD_MUTED = "#8B95A7"  # opencode's Nord `textMuted`
 THEME: dict[str, str] = {
-    "user.tag": "bold cyan",
-    "user.text": "cyan",
+    "user.tag": f"bold {_NORD_CYAN}",
+    "user.text": _NORD_CYAN,
     "assistant.text": "",  # terminal default
-    "thought": "italic dim",
-    "tool.tag": "bold yellow",
-    "tool.detail": "yellow",
-    "tool.result": "dim",
-    "tool.failed": "bold red",  # reserved for a structured stream; `paseo logs` prints no results
-    "permission": "bold black on yellow",
-    "error.tag": "bold red",
-    "error.text": "red",
-    "success": "green",
-    "status": "magenta",
-    "meta": "dim",
-    "diff.add": "green",
-    "diff.remove": "red",
-    "diff.hunk": "bold cyan",
-    "diff.context": "dim",
-    "md.heading": "bold yellow",
-    "md.code": "magenta",
-    "md.fence": "dim",
-    "md.bullet": "magenta",
-    "md.quote": "italic dim",
-    "md.link": "underline blue",
-    "status.running": "yellow",
-    "status.idle": "green",
-    "status.error": "red",
-    "status.closed": "dim",
+    "thought": f"italic {_NORD_MUTED}",
+    "tool.tag": f"bold {_NORD_YELLOW}",
+    "tool.detail": _NORD_TEAL,
+    "tool.result": _NORD_MUTED,
+    "tool.failed": f"bold {_NORD_RED}",  # reserved for a structured stream; `paseo logs` prints no results
+    "permission": f"bold #2E3440 on {_NORD_YELLOW}",
+    "error.tag": f"bold {_NORD_RED}",
+    "error.text": _NORD_RED,
+    "success": _NORD_GREEN,
+    "status": _NORD_PURPLE,
+    "meta": _NORD_MUTED,
+    "diff.add": _NORD_GREEN,
+    "diff.remove": _NORD_RED,
+    "diff.hunk": f"bold {_NORD_CYAN}",
+    "diff.context": _NORD_MUTED,
+    "md.heading": f"bold {_NORD_BLUE}",
+    "md.code": _NORD_PURPLE,
+    "md.fence": _NORD_MUTED,
+    "md.bullet": _NORD_PURPLE,
+    "md.quote": f"italic {_NORD_MUTED}",
+    "md.link": f"underline {_NORD_BLUE}",
+    "status.running": _NORD_YELLOW,
+    "status.idle": _NORD_GREEN,
+    "status.error": _NORD_RED,
+    "status.closed": _NORD_MUTED,
 }
-# Pygments theme for lines inside a fenced code block (rich.syntax.ANSISyntaxTheme: ANSI names only).
-CODE_THEME = "ansi_dark"
+# Pygments style for lines inside a fenced code block (Pygments' own Nord style). Only its
+# foreground colour and bold/italic/underline are used: its background is dropped so code lines
+# sit on the same background as the rest of the log.
+CODE_THEME = "nord"
 
 # Bracketed lines `paseo logs` prints that are not tool calls. `Reconnected; ...` and
 # `Timeline replaced; ...` carry detail after a semicolon, so they match by prefix.
@@ -448,9 +463,19 @@ class LogStyler:
                 from rich.syntax import Syntax
 
                 self._syntax = Syntax("", lang, theme=CODE_THEME)
+            default = self._syntax.get_theme(CODE_THEME).get_style_for_token(Token.Text).color
             for span in self._syntax.highlight(line).spans:
-                if span.start < len(line):
-                    text.stylize(span.style, span.start, min(span.end, len(line)))
+                if span.start < len(line) and isinstance(span.style, Style):
+                    plain = not (span.style.bold or span.style.italic or span.style.underline)
+                    if plain and span.style.color == default:
+                        continue  # the theme's default text colour: leave it to the terminal's own foreground
+                    fg = Style(
+                        color=span.style.color,
+                        bold=span.style.bold,
+                        italic=span.style.italic,
+                        underline=span.style.underline,
+                    )
+                    text.stylize(fg, span.start, min(span.end, len(line)))
         return text
 
 
