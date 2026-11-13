@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pygments.token import Token
+from rich.color import Color
 from rich.style import Style
 from rich.text import Text
 
@@ -74,7 +75,6 @@ THEME: dict[str, str] = {
     "md.fence": _K["overlay0"],
     "md.bullet": _K["mauve"],
     "md.quote": f"italic {_K['overlay1']}",
-    "md.link": f"underline {_K['blue']}",
     "status.running": _K["yellow"],
     "status.idle": _K["green"],
     "status.error": _K["red"],
@@ -332,12 +332,66 @@ _HEADING = re.compile(r"^ {0,3}#{1,6}(?:\s|$)")
 _BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])(?=\s)")
 _QUOTE = re.compile(r"^\s*>")
 _INLINE_CODE = re.compile(r"`[^`\n]+`")
-_LINK = re.compile(r"\[(?P<label>[^\]\n]+)\]\([^)\s]+\)")  # only the label is coloured, not the [](url) syntax
+_LINK = re.compile(r"\[(?P<label>[^\]\n]+)\]\([^)\s]+\)")  # only the label is highlighted, not the [](url) syntax
+# A bare URL: only the host (the FQDN, without a leading "www." or a port) is highlighted.
+_BARE_URL = re.compile(r"https?://(?P<host>[^\s/:?#)\]>\"'<`,;]+)", re.IGNORECASE)
 _FENCE = re.compile(r"^\s*```\s*([\w+#.-]*)")
 _TASK = re.compile(r"^\s*- \[[ xX]\]")
 _TASK_DONE = re.compile(r"^\s*- \[[xX]\]")
 _PATH_OR_URL = re.compile(r"https?://[^\s)\]>\"']+|(?<![\w/.])(?:~|\.{1,2})?/[\w.@+\-/]+")
 _DIFF_LANGS = frozenset({"diff", "patch", "udiff"})
+
+
+def _brighten(color: Color, amount: float) -> Color:
+    """The colour mixed `amount` of the way toward white."""
+    r, g, b = color.get_truecolor()
+    return Color.from_rgb(*(round(c + (255 - c) * amount) for c in (r, g, b)))
+
+
+# "Vibrant" colour for emphasised text that has no colour of its own: herdr's Kanagawa blue, brightened.
+_VIBRANT = _brighten(Color.parse(KANAGAWA["blue"]), 0.3)
+
+
+def escalate(surrounding: Style) -> Style:
+    """The style for a highlighted link, one step stronger than the text around it.
+
+    normal -> italic, italic -> bold italic, bold -> vibrant bold, bold italic -> vibrant bold
+    italic. If the surrounding text has its own colour, the highlight keeps it but brighter; if
+    it has none (the terminal's default text colour), only the bold steps add a colour, so a
+    highlighted link in plain text is italic without changing colour. Bold and italic survive
+    NO_COLOR, so the highlight is still visible there.
+    """
+    own = surrounding.color if surrounding.color is not None and not surrounding.color.is_default else None
+    if surrounding.bold:
+        return Style(color=_brighten(own, 0.35) if own else _VIBRANT, bold=True, italic=bool(surrounding.italic))
+    return Style(color=_brighten(own, 0.3) if own else None, bold=bool(surrounding.italic), italic=True)
+
+
+def _style_at(text: Text, offset: int) -> Style:
+    """The style a character of `text` has so far: the text's base style plus every span over it."""
+    style = text.style if isinstance(text.style, Style) else Style.parse(text.style or "")
+    for span in text.spans:
+        if span.start <= offset < span.end:
+            style += span.style if isinstance(span.style, Style) else Style.parse(span.style)
+    return style
+
+
+def _highlight_links(text: Text, line: str) -> None:
+    """Escalate the label of `[label](url)` links and the host of bare URLs; the rest stays as it was."""
+    markdown = [m.span() for m in _LINK.finditer(line)]
+    code = [m.span() for m in _INLINE_CODE.finditer(line)]
+    spans = [m.span("label") for m in _LINK.finditer(line)]
+    for found in _BARE_URL.finditer(line):
+        if any(a <= found.start() < b for a, b in markdown + code):
+            continue
+        start, end = found.span("host")
+        end = start + len(found.group("host").rstrip("."))
+        if line[start : start + 4].lower() == "www.":
+            start += 4
+        if start < end:
+            spans.append((start, end))
+    for start, end in spans:
+        text.stylize(escalate(_style_at(text, start)), start, end)
 
 
 def _style(text: Text, token: str, start: int = 0, end: int | None = None) -> None:
@@ -387,9 +441,11 @@ class LogStyler:
             self.block = "user"
             _style(text, "user.tag", 0, end)
             _style(text, "user.text", end)
+            _highlight_links(text, line)
         elif name == "thought":
             self.block = "thought"
             _style(text, "thought")
+            _highlight_links(text, line)
         elif name == "error":
             self.block = "assistant"
             _style(text, "error.tag", 0, end)
@@ -412,9 +468,11 @@ class LogStyler:
         text = Text(line)
         if self.block == "user":
             _style(text, "user.text")
+            _highlight_links(text, line)
             return text
         if self.block == "thought":
             _style(text, "thought")
+            _highlight_links(text, line)
             return text
         if self.block == "tasks":
             if _TASK.match(line):
@@ -447,8 +505,7 @@ class LogStyler:
             if bullet:
                 _style(text, "md.bullet", 0, bullet.end())
         text.highlight_regex(_INLINE_CODE, style_for("md.code"))
-        for link in _LINK.finditer(line):
-            _style(text, "md.link", *link.span("label"))
+        _highlight_links(text, line)
         return text
 
     def _in_fence(self, line: str, text: Text) -> Text:

@@ -86,10 +86,12 @@ The log is coloured by meaning, on your terminal's own background, which herdr4p
 | `[Error]` | bold deep-red tag, deep-red text |
 | `[Tasks]` list | `- [x]` items green, `- [ ]` items plain |
 | `[Compacted]`, `[Reconnected; ...]`, `[Timeline replaced; ...]`, the follow banner, reconnect notes | grey |
-| Assistant text (no tag) | terminal default, with markdown headings (bold teal), list markers and inline code (muted purple), quotes (italic grey) and the text of `[text](url)` links (underlined blue; the brackets and the URL stay uncoloured) |
+| Assistant text (no tag) | terminal default, with markdown headings (bold teal), list markers and inline code (muted purple), quotes (italic grey) and highlighted links (see below) |
 | Fenced code in assistant text | `diff` and `patch` fences: green `+`, red `-`, bold blue `@@`, grey context; other fences are highlighted with Pygments' Nord style by the fence's language (Pygments has no Kanagawa), keeping your terminal's own foreground and background |
 | herdr4paseo's own notes | deep red for failures, green for started and permit answered, purple for stopped, grey for information, bold dull gold for `alert:` |
 | Agent status (header and picker) | running yellow, idle green, error red, closed or archived grey (the same mapping as herdr) |
+
+Links: in `[text](url)` only the text is highlighted, and in a bare `https://www.example.com/path` only the host (`example.com`, no leading `www.`, no port). The highlight is one step stronger than the text around it: plain text becomes italic, italic becomes bold italic, bold becomes bold in a brighter, more vibrant colour, and bold italic becomes the same in bold italic. Text that already has a colour (such as `[User]` text) keeps it, brighter. Links inside inline code and code fences are left alone. The steps use only bold and italic for plain text, so they still show under `NO_COLOR`.
 
 Limits: `paseo logs` prints no tag for assistant text, so a multi-line `[User]` prompt followed directly by assistant text shows that text in the user colour until the next tag. It also prints no tool output or diffs, so only diffs the assistant writes in a fenced block are coloured. Colouring is per line, so a multi-line string inside a code fence may be highlighted imperfectly. Lines already shown keep their colours when the terminal theme changes; Ctrl+O twice re-reads the log.
 

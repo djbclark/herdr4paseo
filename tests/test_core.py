@@ -10,6 +10,7 @@ from herdr4paseo.core import (
     THEME,
     Agent,
     LogStyler,
+    escalate,
     agent_label_text,
     filter_agents,
     find_agent,
@@ -145,7 +146,7 @@ def test_tag_styling_by_kind():
 
 def test_markdown_link_at_line_start_is_not_a_tag():
     link = style_line("[foo](http://x) rest")
-    assert style_at(link, 1) == tok("md.link") and style_at(link, 3) == tok("md.link")  # the label
+    assert style_at(link, 1).italic and style_at(link, 3).italic  # the label: plain text -> italic
     assert style_at(link, 0) == Style.null() and style_at(link, 4) == Style.null()  # the brackets
     assert style_at(link, 7) == Style.null() and style_at(link, 14) == Style.null()  # the URL
     assert style_at(link, 17) == Style.null()
@@ -303,3 +304,76 @@ def test_run_argv_is_quiet_nowait_and_guards_leading_dash(monkeypatch):
     monkeypatch.setenv("PASEO_BIN", "paseo")
     assert run_argv("do it", "claude") == ["paseo", "run", "--no-wait", "--quiet", "--provider", "claude", "do it"]
     assert run_argv("-x", "codex") == ["paseo", "run", "--no-wait", "--quiet", "--provider", "codex", " -x"]
+
+
+def host_spans(text: Text) -> list[str]:
+    """The substrings of `text` that carry any style."""
+    covered = sorted({i for sp in text.spans for i in range(sp.start, min(sp.end, len(text.plain)))})
+    runs, current = [], ""
+    for i, ch in enumerate(text.plain):
+        if i in covered:
+            current += ch
+        elif current:
+            runs.append(current)
+            current = ""
+    return runs + ([current] if current else [])
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("see https://github.com/a/b now", ["github.com"]),
+        ("see https://www.example.org/x?y=1 now", ["example.org"]),
+        ("see HTTP://WWW.Example.org now", ["Example.org"]),
+        ("go to https://example.com.", ["example.com"]),
+        ("port https://localhost:8080/x", ["localhost"]),
+        ("two https://a.io/x and https://www.b.io", ["a.io", "b.io"]),
+        ("(https://a.io)", ["a.io"]),
+        ("no scheme example.com", []),
+    ],
+)
+def test_bare_url_highlights_only_the_host_without_www(line, expected):
+    assert host_spans(style_line(line)) == expected
+
+
+def test_markdown_link_url_and_inline_code_urls_are_not_double_highlighted():
+    assert host_spans(style_line("[Frost](https://github.com/Y/F) x")) == ["Frost"]
+    assert host_spans(style_line("run `curl https://a.io/x` now")) == ["`curl https://a.io/x`"]  # inline code only
+
+
+def test_escalate_steps_up_the_surrounding_emphasis():
+    plain = escalate(Style())
+    assert plain.italic and not plain.bold and plain.color is None
+    italic = escalate(Style(italic=True))
+    assert italic.italic and italic.bold and italic.color is None
+    bold = escalate(Style(bold=True))
+    assert bold.bold and not bold.italic and bold.color is not None  # vibrant
+    both = escalate(Style(bold=True, italic=True))
+    assert both.bold and both.italic and both.color is not None
+
+
+def test_escalate_brightens_a_colour_the_surrounding_text_already_has():
+    base = Style.parse("#7E9CD8")
+    out = escalate(base)
+    assert out.color is not None and out.color != base.color
+    r0, g0, b0 = base.color.get_truecolor()
+    r1, g1, b1 = out.color.get_truecolor()
+    assert r1 >= r0 and g1 >= g0 and b1 >= b0
+    assert escalate(Style.parse("bold #7E9CD8")).bold
+
+
+def test_link_label_escalates_relative_to_its_line():
+    heading = style_line("# See [docs](https://x.io/y) and https://www.z.io")
+    label = heading.plain.index("docs")
+    host = heading.plain.index("z.io")
+    assert style_at(heading, label).bold and style_at(heading, host).bold  # heading is bold -> vibrant bold
+    thought = style_line("[Thought] check https://github.com/a")
+    assert style_at(thought, thought.plain.index("github")).bold  # thought is italic -> bold italic
+    assert style_at(thought, thought.plain.index("github")).italic
+    user = style_line("[User] look at https://a.io")
+    assert style_at(user, user.plain.index("a.io")).italic  # user text is coloured, not bold -> italic, brighter
+    assert style_at(user, user.plain.index("a.io")).color != Style.parse(THEME["user.text"]).color
+    cont = LogStyler()
+    cont.style("[User] first")
+    tail = cont.style("see https://a.io")
+    assert style_at(tail, tail.plain.index("a.io")).italic
