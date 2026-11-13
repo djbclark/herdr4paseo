@@ -16,14 +16,78 @@ from rich.text import Text
 BEHAVIORS = ("steer", "interrupt")
 HISTORY_LIMIT = 200
 
-_TAG = re.compile(r"^\[([^\]]+)\]")
+# A tag is `[Name]` at the start of a line followed by whitespace or the end of the line, so a
+# markdown link such as `[docs](https://x)` is not mistaken for one.
+_TAG = re.compile(r"^\[([^\]\n]+)\](?=\s|$)")
 _FOLLOW_BANNER = re.compile(r"^--- Following logs \(last (\d+) entries; Ctrl\+C to stop\) ---$")
-_STYLES = {
-    "user": "bold cyan",
+
+# Semantic style tokens. The vocabulary (user message, thinking text, tool title/output,
+# diff added/removed/context, markdown, syntax) is adapted from pi's theme tokens
+# (https://github.com/earendil-works/pi, MIT, (c) 2025 Mario Zechner,
+# packages/coding-agent/src/modes/interactive/theme/theme-tokens.ts). The values are Rich style
+# strings using the 16 ANSI colour names, so they follow the terminal's own palette and are exact
+# on 16-colour terminals. Meaning must also survive NO_COLOR: tags stay in the text, diff lines
+# keep their +/-, and the tag/thought tokens carry bold/italic/dim, which Textual's NO_COLOR
+# filter keeps.
+# The `status.*` tokens mirror herdr's agent-state colours (https://github.com/herdrdev/herdr,
+# Apache-2.0, src/client/shell.rs `status_color`), so both tools agree visually.
+THEME: dict[str, str] = {
+    "user.tag": "bold cyan",
+    "user.text": "cyan",
+    "assistant.text": "",  # terminal default
     "thought": "italic dim",
-    "error": "bold red",
+    "tool.tag": "bold yellow",
+    "tool.detail": "yellow",
+    "tool.result": "dim",
+    "tool.failed": "bold red",  # reserved for a structured stream; `paseo logs` prints no results
+    "permission": "bold black on yellow",
+    "error.tag": "bold red",
+    "error.text": "red",
+    "success": "green",
+    "status": "magenta",
+    "meta": "dim",
+    "diff.add": "green",
+    "diff.remove": "red",
+    "diff.hunk": "bold cyan",
+    "diff.context": "dim",
+    "md.heading": "bold yellow",
+    "md.code": "magenta",
+    "md.fence": "dim",
+    "md.bullet": "magenta",
+    "md.quote": "italic dim",
+    "md.link": "underline blue",
+    "status.running": "yellow",
+    "status.idle": "green",
+    "status.error": "red",
+    "status.closed": "dim",
 }
-_TOOL_STYLE = "yellow"
+# Pygments theme for lines inside a fenced code block (rich.syntax.ANSISyntaxTheme: ANSI names only).
+CODE_THEME = "ansi_dark"
+
+# Bracketed lines `paseo logs` prints that are not tool calls. `Reconnected; ...` and
+# `Timeline replaced; ...` carry detail after a semicolon, so they match by prefix.
+META_TAGS = frozenset({"compacted", "earlier chat history omitted"})
+_META_PREFIXES = ("reconnected;", "timeline replaced;")
+
+_STATUS_TOKENS = {
+    "running": "status.running",
+    "idle": "status.idle",
+    "error": "status.error",
+    "closed": "status.closed",
+    "archived": "status.closed",
+    "stopped": "status.closed",
+}
+
+
+def style_for(token: str) -> str:
+    """The Rich style string for a token; an unknown token is a bug and raises KeyError."""
+    return THEME[token]
+
+
+def status_style(status: str) -> str:
+    """Style for an agent status word (running yellow, idle green, error red, closed dim)."""
+    token = _STATUS_TOKENS.get(status.lower())
+    return style_for(token) if token else ""
 
 
 def paseo_bin() -> str:
@@ -243,19 +307,163 @@ def send_argv(agent: str, text: str, behavior: str) -> list[str]:
     return [paseo_bin(), "send", agent, "--no-wait", "--behavior", behavior, text]
 
 
-def style_line(line: str) -> Text:
-    """Colour the `[Tag]` prefix `paseo logs` puts on each entry; leave the rest alone.
+_HEADING = re.compile(r"^ {0,3}#{1,6}(?:\s|$)")
+_BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])(?=\s)")
+_QUOTE = re.compile(r"^\s*>")
+_INLINE_CODE = re.compile(r"`[^`\n]+`")
+_LINK = re.compile(r"\[[^\]\n]+\]\([^)\s]+\)")
+_FENCE = re.compile(r"^\s*```\s*([\w+#.-]*)")
+_TASK = re.compile(r"^\s*- \[[ xX]\]")
+_TASK_DONE = re.compile(r"^\s*- \[[xX]\]")
+_PATH_OR_URL = re.compile(r"https?://[^\s)\]>\"']+|(?<![\w/.])(?:~|\.{1,2})?/[\w.@+\-/]+")
+_DIFF_LANGS = frozenset({"diff", "patch", "udiff"})
 
-    The "--- Following logs (...; Ctrl+C to stop) ---" banner `paseo logs -f` prints is
-    dimmed and reworded: Ctrl+C is not how you stop anything inside this TUI.
+
+def _style(text: Text, token: str, start: int = 0, end: int | None = None) -> None:
+    style = style_for(token)
+    if style:
+        text.stylize(style, start, len(text) if end is None else end)
+
+
+class LogStyler:
+    """Colour `paseo logs` lines one at a time, remembering what the previous line was.
+
+    `paseo logs` tags only user, thought and tool entries; assistant prose has no tag. So the
+    state is the kind of the last tagged block (continuation lines of a `[User]` or `[Thought]`
+    entry carry no tag) plus the language of the open code fence, if any. One styler per
+    stream: make a new one whenever the log view is cleared.
+
+    A multi-line `[User]` prompt followed directly by untagged assistant text cannot be told
+    apart, so that text keeps the user colour until the next tag.
     """
-    banner = _FOLLOW_BANNER.match(line)
-    if banner:
-        return Text(f"--- following live (last {banner.group(1)} entries) ---", style="dim")
-    match = _TAG.match(line)
-    if not match:
-        return Text(line)
-    style = _STYLES.get(match.group(1).lower(), _TOOL_STYLE)
-    text = Text(line)
-    text.stylize(style, 0, match.end())
+
+    def __init__(self) -> None:
+        self.block = "assistant"  # user, thought, tasks or assistant
+        self.fence_lang: str | None = None  # None outside a fence; "" for a fence without a language
+        self._syntax = None
+
+    def style(self, line: str) -> Text:
+        banner = _FOLLOW_BANNER.match(line)
+        if banner:
+            return Text(f"--- following live (last {banner.group(1)} entries) ---", style=style_for("meta"))
+        tag = _TAG.match(line)
+        if tag:
+            return self._tagged(line, tag)
+        return self._untagged(line)
+
+    # -- tagged entries -------------------------------------------------------------
+
+    def _tagged(self, line: str, tag: re.Match[str]) -> Text:
+        name = tag.group(1).lower()
+        text = Text(line)
+        end = tag.end()
+        self.fence_lang = None
+        self._syntax = None
+        if name in META_TAGS or name.startswith(_META_PREFIXES):
+            self.block = "assistant"
+            _style(text, "meta")
+        elif name == "user":
+            self.block = "user"
+            _style(text, "user.tag", 0, end)
+            _style(text, "user.text", end)
+        elif name == "thought":
+            self.block = "thought"
+            _style(text, "thought")
+        elif name == "error":
+            self.block = "assistant"
+            _style(text, "error.tag", 0, end)
+            _style(text, "error.text", end)
+        elif name == "tasks":
+            self.block = "tasks"
+            _style(text, "tool.tag", 0, end)
+            _style(text, "tool.detail", end)
+        else:  # a tool call: Shell, Read, Edit, an MCP tool name, ...
+            self.block = "assistant"  # tool entries are one line
+            _style(text, "tool.tag", 0, end)
+            _style(text, "tool.detail", end)
+            for found in _PATH_OR_URL.finditer(line, end):
+                text.stylize("underline", found.start(), found.end())
+        return text
+
+    # -- continuation and assistant lines -------------------------------------------
+
+    def _untagged(self, line: str) -> Text:
+        text = Text(line)
+        if self.block == "user":
+            _style(text, "user.text")
+            return text
+        if self.block == "thought":
+            _style(text, "thought")
+            return text
+        if self.block == "tasks":
+            if _TASK.match(line):
+                if _TASK_DONE.match(line):
+                    _style(text, "success")
+                return text
+            self.block = "assistant"
+        return self._assistant(line, text)
+
+    def _assistant(self, line: str, text: Text) -> Text:
+        fence = _FENCE.match(line)
+        if fence:
+            if self.fence_lang is None:
+                self.fence_lang = fence.group(1).lower()
+                self._syntax = None
+            else:
+                self.fence_lang = None
+                self._syntax = None
+            _style(text, "md.fence")
+            return text
+        if self.fence_lang is not None:
+            return self._in_fence(line, text)
+        _style(text, "assistant.text")
+        if _HEADING.match(line):
+            _style(text, "md.heading")
+        elif _QUOTE.match(line):
+            _style(text, "md.quote")
+        else:
+            bullet = _BULLET.match(line)
+            if bullet:
+                _style(text, "md.bullet", 0, bullet.end())
+        text.highlight_regex(_INLINE_CODE, style_for("md.code"))
+        text.highlight_regex(_LINK, style_for("md.link"))
+        return text
+
+    def _in_fence(self, line: str, text: Text) -> Text:
+        lang = self.fence_lang or ""
+        if lang in _DIFF_LANGS:
+            if line.startswith("@@"):
+                _style(text, "diff.hunk")
+            elif line.startswith(("+++", "---")):
+                _style(text, "diff.hunk")
+            elif line.startswith("+"):
+                _style(text, "diff.add")
+            elif line.startswith("-"):
+                _style(text, "diff.remove")
+            else:
+                _style(text, "diff.context")
+            return text
+        if lang:
+            if self._syntax is None:
+                from rich.syntax import Syntax
+
+                self._syntax = Syntax("", lang, theme=CODE_THEME)
+            for span in self._syntax.highlight(line).spans:
+                if span.start < len(line):
+                    text.stylize(span.style, span.start, min(span.end, len(line)))
+        return text
+
+
+def style_line(line: str) -> Text:
+    """Style one log line with no memory of earlier lines (see LogStyler for the stateful form)."""
+    return LogStyler().style(line)
+
+
+def agent_label_text(agent: Agent) -> Text:
+    """The picker row for an agent, with the status word coloured like the header."""
+    text = Text(agent.label)
+    start = len(agent.short_id) + 2
+    style = status_style(agent.status)
+    if style:
+        text.stylize(style, start, start + len(agent.status))
     return text

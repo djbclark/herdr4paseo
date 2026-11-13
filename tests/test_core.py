@@ -1,9 +1,16 @@
 import json
 
 import pytest
+from rich.color import ColorSystem
+from rich.style import Style
+from rich.text import Text
 
 from herdr4paseo.core import (
+    META_TAGS,
+    THEME,
     Agent,
+    LogStyler,
+    agent_label_text,
     filter_agents,
     find_agent,
     load_history,
@@ -17,7 +24,9 @@ from herdr4paseo.core import (
     save_history,
     send_argv,
     should_alert,
+    status_style,
     stop_argv,
+    style_for,
     style_line,
 )
 
@@ -78,12 +87,141 @@ def test_ls_argv_asks_for_json():
     assert ls_argv()[1:] == ["ls", "-g", "-a", "--json"]
 
 
-def test_style_line_colours_only_the_tag():
+def style_at(text: Text, index: int) -> Style:
+    """The combined style of the character at `index` (base style, then spans in order)."""
+    styles = [Style.parse(str(text.style))] if text.style else []
+    for span in text.spans:
+        if span.start <= index < span.end:
+            styles.append(span.style if isinstance(span.style, Style) else Style.parse(span.style))
+    return Style.combine(styles) if styles else Style.null()
+
+
+def tok(name: str) -> Style:
+    return Style.parse(THEME[name])
+
+
+def lines(*raw: str) -> list[Text]:
+    styler = LogStyler()
+    return [styler.style(line) for line in raw]
+
+
+def test_style_line_colours_tag_and_body_by_token():
     user = style_line("[User] hi")
     assert user.plain == "[User] hi"
-    assert [(s.start, s.end) for s in user.spans] == [(0, 6)]
+    assert style_at(user, 0) == tok("user.tag")
+    assert style_at(user, 7) == tok("user.text")
     assert style_line("no tag here").spans == []
     assert "red" in str(style_line("[Error] bad").spans[0].style)
+
+
+def test_every_theme_value_parses():
+    for token, value in THEME.items():
+        Style.parse(value)  # raises StyleSyntaxError on a typo
+    with pytest.raises(KeyError):
+        style_for("no.such.token")
+
+
+def test_tag_styling_by_kind():
+    user, shell, error, reconnect, compacted, banner = lines(
+        "[User] hi",
+        "[Shell] ls /tmp/x",
+        "[Error] boom",
+        "[Reconnected; replaying]",
+        "[Compacted]",
+        "--- Following logs (last 20 entries; Ctrl+C to stop) ---",
+    )
+    assert (style_at(user, 1), style_at(user, 8)) == (tok("user.tag"), tok("user.text"))
+    assert style_at(shell, 1) == tok("tool.tag")
+    assert style_at(shell, 8).color == tok("tool.detail").color
+    assert style_at(shell, 12).underline  # the path in the summary
+    assert not style_at(shell, 8).underline
+    assert (style_at(error, 1), style_at(error, 9)) == (tok("error.tag"), tok("error.text"))
+    for meta in (reconnect, compacted, banner):
+        assert style_at(meta, 1) == tok("meta")
+    assert "compacted" in META_TAGS
+    assert style_line("[Timeline replaced; x]").spans[0].style == THEME["meta"]
+    assert style_line("[Earlier chat history omitted]").spans[0].style == THEME["meta"]
+
+
+def test_markdown_link_at_line_start_is_not_a_tag():
+    link = style_line("[foo](http://x) rest")
+    assert style_at(link, 1) == tok("md.link")
+    assert style_at(link, 17) == Style.null()
+    assert style_line("[foo]bar").spans == []  # not followed by whitespace either
+
+
+def test_continuation_lines_inherit_user_and_thought_but_not_tool_lines():
+    _head, cont = lines("[Thought] a", "b")
+    assert style_at(cont, 0).italic and style_at(cont, 0).dim
+    _head, cont = lines("[User] a", "b")
+    assert style_at(cont, 0) == tok("user.text")
+    _head, prose = lines("[Shell] ls", "prose")
+    assert prose.spans == []
+    _head, _prose, tagged = lines("[Thought] a", "b", "[Shell] ls")
+    assert style_at(tagged, 1) == tok("tool.tag")  # a new tag ends the block
+
+
+def test_diff_fence_colours_added_removed_and_hunk_lines():
+    fence, hunk, add, remove, context, close, after = lines(
+        "```diff", "@@ -1 +1 @@", "+x", "-x", " same", "```", "+not a diff"
+    )
+    assert style_at(fence, 0) == tok("md.fence")
+    assert style_at(hunk, 0) == tok("diff.hunk")
+    assert style_at(add, 0) == tok("diff.add")
+    assert style_at(remove, 0) == tok("diff.remove")
+    assert style_at(context, 1) == tok("diff.context")
+    assert style_at(close, 0) == tok("md.fence")
+    assert after.spans == []  # state reset after the closing fence
+    assert [t.plain for t in (add, remove)] == ["+x", "-x"]  # the +/- survive without colour
+
+
+def test_code_fence_uses_pygments_and_resets():
+    fence, code, close, after = lines("```python", "def f(): return 1", "```", "def f(): return 1")
+    assert style_at(fence, 0) == tok("md.fence")
+    assert code.spans and code.plain == "def f(): return 1"
+    assert after.spans == []
+    unknown = lines("```no-such-language", "def f(): return 1")[1]
+    assert unknown.spans == []
+
+
+def test_assistant_markdown_is_styled_per_line():
+    heading, bullet, quote, inline = lines("# Title", "- item", "> said", "use `code` here")
+    assert style_at(heading, 2) == tok("md.heading")
+    assert style_at(bullet, 0) == tok("md.bullet") and style_at(bullet, 3) == Style.null()
+    assert style_at(quote, 3) == tok("md.quote")
+    assert style_at(inline, 5) == tok("md.code") and style_at(inline, 0) == Style.null()
+
+
+def test_task_list_marks_done_items_only():
+    _tasks, done, todo, after = lines("[Tasks]", "- [x] done", "- [ ] todo", "prose")
+    assert style_at(done, 3) == tok("success")
+    assert todo.spans == []
+    assert after.spans == []
+
+
+def test_monochrome_legibility_needs_more_than_colour():
+    plain = Style.parse(THEME["assistant.text"]).without_color
+    for token in ("user.tag", "thought"):
+        assert Style.parse(THEME[token]).without_color != plain, token
+
+
+def test_sixteen_colour_distinctness():
+    downgraded = {
+        token: Style.parse(THEME[token]).color.downgrade(ColorSystem.STANDARD)
+        for token in ("user.tag", "tool.tag", "error.tag", "success")
+    }
+    assert len(set(downgraded.values())) == 4, downgraded
+
+
+def test_status_style_and_picker_label():
+    assert status_style("running") == THEME["status.running"]
+    assert status_style("idle") == THEME["status.idle"]
+    assert status_style("error") == THEME["status.error"]
+    assert status_style("archived") == THEME["status.closed"]
+    assert status_style("???") == ""
+    label = agent_label_text(Agent("i", "abc", "my agent", "codex/x", "idle", "/"))
+    assert label.plain.startswith("abc  idle")
+    assert style_at(label, 5).color == tok("status.idle").color and style_at(label, 0) == Style.null()
 
 
 PERMITS = json.dumps(
@@ -121,7 +259,7 @@ def test_permit_argv_names_one_request_never_blanket():
 def test_follow_banner_is_dimmed_and_loses_the_ctrl_c_hint():
     banner = style_line("--- Following logs (last 20 entries; Ctrl+C to stop) ---")
     assert banner.plain == "--- following live (last 20 entries) ---"
-    assert "dim" in str(banner.style)
+    assert banner.style == THEME["meta"]
     # a different dashed line is left alone
     assert style_line("--- something else ---").plain == "--- something else ---"
 
