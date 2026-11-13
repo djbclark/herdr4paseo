@@ -211,6 +211,10 @@ async def run_paseo(argv: list[str], cwd: str | None = None) -> tuple[int, str, 
     return proc.returncode or 0, out.decode(errors="replace"), err.decode(errors="replace")
 
 
+# Typed in the prompt, these quit herdr4paseo itself; the agent keeps running and never sees them.
+QUIT_COMMANDS = frozenset({"/quit", "/exit"})
+
+
 class Herdr4PaseoApp(App[None]):
     CSS = """
     #log { height: 1fr; }
@@ -229,7 +233,9 @@ class Herdr4PaseoApp(App[None]):
     BINDINGS = [
         Binding("ctrl+t", "toggle_behavior", "steer/interrupt"),
         Binding("ctrl+o", "toggle_tools", "tools only"),
-        Binding("ctrl+g", "switch_agent", "agents"),
+        # Ctrl+G is macOS's Gemini shortcut, so the agent picker lives on Ctrl+L.
+        Binding("ctrl+l", "switch_agent", "agents"),
+        Binding("ctrl+q", "quit", "quit", priority=True),  # Textual's default, shown in the footer here
         Binding("ctrl+r", "new_agent", "new agent", priority=True),
         # Priority beats the prompt's own Ctrl+X (cut); a confirmation guards the stop.
         Binding("ctrl+x", "stop_agent", "stop agent", priority=True),
@@ -298,7 +304,7 @@ class Herdr4PaseoApp(App[None]):
             choice = await self.push_screen_wait(PickAgent(agents))
             picked = find_agent(agents, choice) if choice else None
         if picked is None:
-            self._note("no agent selected; Ctrl+G to pick one", "bold red")
+            self._note("no agent selected; Ctrl+L to pick one", "bold red")
             return
         self.agent = picked
         self._last_status = picked.status
@@ -432,11 +438,14 @@ class Herdr4PaseoApp(App[None]):
     async def on_prompt_area_submitted(self, message: PromptArea.Submitted) -> None:
         message.stop()
         if self.agent is None:
-            self._note("no agent selected; Ctrl+G to pick one", "bold red")
+            self._note("no agent selected; Ctrl+L to pick one", "bold red")
             return
         prompt = self.query_one("#prompt", PromptArea)
         text = prompt.text.strip()
         if not text:
+            return
+        if text.lower() in QUIT_COMMANDS:  # handled here, never sent to the agent
+            self.exit()
             return
         code, _out, err = await run_paseo(send_argv(self.agent.id, text, self.behavior))
         if code != 0:

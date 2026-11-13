@@ -59,12 +59,12 @@ Find an agent id with `paseo ls -g -a`. Type a prompt and press Enter to send it
 | `/`, then Tab, Up, Down | Slash-command suggestions: Tab completes the highlighted command, Up and Down choose, Enter sends exactly what you typed |
 | Ctrl+T | Toggle send behaviour: `steer` or `interrupt` |
 | Ctrl+O | Toggle a tools-only log view |
-| Ctrl+G | Switch agent: type to filter by id, status, name, provider or directory, then Enter |
+| Ctrl+L | Switch agent: type to filter by id, status, name, provider or directory, then Enter |
 | Ctrl+P, Ctrl+N | Prompt history, previous and next (kept between runs) |
 | Ctrl+R | Start a new agent (`paseo run --no-wait`): prompt, directory, provider (prefilled from the current agent); then attaches to it |
 | Ctrl+X | Stop the agent (`paseo stop`), after a y/n confirmation |
 | Ctrl+A, Ctrl+D | Allow or deny the agent's pending permission requests (only active while some are pending; asks to confirm) |
-| Ctrl+Q | Quit (the agent keeps running) |
+| Ctrl+Q, or `/quit` / `/exit` typed in the prompt | Quit back to the shell (the agent keeps running). The two typed commands are handled here and never sent to the agent, so they shadow an agent's own `/quit` or `/exit` |
 
 The header shows the agent's status (polled every 3 s), the send behaviour and the log view. A failed send keeps your text in the box and prints the error in the log.
 

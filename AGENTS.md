@@ -5,7 +5,7 @@ Public repo: github.com/djbclark/herdr4paseo.
 
 1. `src/herdr4paseo/core.py` is pure (argv builders, `paseo ls --json` parsing, log-line styling); `daemon.py` is the WebSocket client for slash-command discovery; `app.py` is the Textual UI.
 2. Tests use `tests/fake_paseo.py` through `PASEO_BIN` and `tests/fake_daemon.py` through `PASEO_HOST`/`PASEO_HOME`; never point tests at a real daemon or send to a live agent. The daemon's `local-credential` file is read only for a loopback daemon and never printed or sent elsewhere.
-3. Run tests with `uv run --group dev pytest -q` (through `~/ops/site-private/bin/bg`; the CI-first decision is recorded as local).
+3. Run tests with `uv run --group dev pytest -q` (through `~/ops/site-private/bin/bg`; the CI-first decision is recorded as local). In a cow pasture use `uv run --group dev python -m pytest -q`: the cloned `.venv/bin/pytest` has a shebang pointing at the original checkout's venv, so bare `pytest` silently tests the old source (2026-11-13).
 4. Do not run `paseo --help` or other probing on the live daemon; read https://paseo.sh/docs/cli instead.
 5. Output formats of `paseo logs` and `paseo ls --json` were read from a live daemon on 2026-10-28; recheck if Paseo changes them.
 6. Checked live on 2026-10-30: `paseo permit deny <agent> <request id>` answers exactly one request and `paseo permit ls --json` has `id`, `agentId`, `agentShortId`, `name`, `description` (`-` when empty); `paseo run` fails with "Provider is required" without `--provider`. `paseo permit allow <agent> <request id>` was also run live and allowed exactly that request.

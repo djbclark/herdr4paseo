@@ -408,3 +408,36 @@ async def test_new_agent_needs_a_provider(calls):
         await pilot.press("escape")
         await pilot.pause(0.2)
     assert not any(c[0] == "run" for c in recorded(calls))
+
+
+async def test_ctrl_l_opens_the_agent_picker_and_ctrl_g_does_not(calls):
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await settle(pilot, app, "plain assistant line")
+        await pilot.press("ctrl+g")
+        await pilot.pause(0.2)
+        assert type(app.screen).__name__ not in ("PickAgent",)
+        await pilot.press("ctrl+l")
+        await pilot.pause(0.2)
+        assert type(app.screen).__name__ == "PickAgent"
+
+
+@pytest.mark.parametrize("command", ["/quit", "/exit", "  /QUIT  "])
+async def test_typed_quit_command_exits_without_sending(calls, command):
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await settle(pilot, app, "plain assistant line")
+        app.query_one("#prompt", PromptArea).text = command
+        await pilot.press("enter")
+        await pilot.pause(0.2)
+    assert not any(c[0] == "send" for c in recorded(calls))
+    assert app._exit
+
+
+async def test_ctrl_q_quits(calls):
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await settle(pilot, app, "plain assistant line")
+        await pilot.press("ctrl+q")
+        await pilot.pause(0.2)
+    assert app._exit

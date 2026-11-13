@@ -7,7 +7,7 @@ This page walks through the jobs the tool is for. For the key table and options 
 1. Start or find an agent in Paseo. `paseo ls -g -a` lists every agent, archived ones included, with its short id.
 2. In a Herdr pane, run `herdr4paseo 7dba08f` (your id). The last 50 log entries appear, then new entries stream in live.
 3. The header shows the agent's status. It refreshes every 3 seconds.
-4. Quit with Ctrl+Q. The agent is not touched. Run the command again, or press Ctrl+G inside it, to reattach.
+4. Quit with Ctrl+Q, or type `/quit` or `/exit` and press Enter (these are handled by herdr4paseo and never sent to the agent). You return to the shell you launched it from, and the agent is not touched. Run the command again, or press Ctrl+L inside it, to reattach.
 
 Use `--tail 300` to see more history on attach. Press Ctrl+O to show only tool calls, which makes a long run easier to skim; press it again to return to the full log.
 
@@ -48,7 +48,7 @@ If the command list cannot be loaded, the log shows `slash completion unavailabl
 
 ## 5. Switch agents
 
-Press Ctrl+G, type to filter (every word must match the id, status, name, provider or directory), pick with the arrow keys and Enter (Escape cancels). Each row shows the agent's directory. The log and slash commands switch to the new agent. The previous agent keeps running.
+Press Ctrl+L (Ctrl+G is macOS's Gemini shortcut, so it is not used), type to filter (every word must match the id, status, name, provider or directory), pick with the arrow keys and Enter (Escape cancels). Each row shows the agent's directory. The log and slash commands switch to the new agent. The previous agent keeps running.
 
 ## 6. Use a different daemon
 
@@ -65,7 +65,7 @@ Slash suggestions connect to the same daemon. The local credential file is only 
 | Symptom | Cause and fix |
 | --- | --- |
 | `paseo ls failed (rc=...)` in the log | The `paseo` CLI could not reach the daemon. Check `paseo ls` works in the same shell and that `PASEO_HOST` and `PASEO_HOME` match. |
-| `no agent selected; Ctrl+G to pick one` | The id you gave matched nothing or matched more than one agent. Use a longer prefix or pick from the list. |
+| `no agent selected; Ctrl+L to pick one` | The id you gave matched nothing or matched more than one agent. Use a longer prefix or pick from the list. |
 | `log stream ended (rc=...); reconnecting in 3s` | `paseo logs -f` exited, for example the daemon restarted. It reattaches by itself every 3 s, clearing the view and re-reading the last `--tail` entries. |
 | `send failed (rc=...)` | The `paseo send` error is printed after it. Your text is still in the box. |
 | `slash completion unavailable (...)` | The WebSocket lookup failed; the reason is in the brackets. Typed commands still send. |
