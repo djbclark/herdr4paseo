@@ -77,13 +77,15 @@ The terminal bell rings, with a yellow `alert:` line in the log, when the shown 
 | `PASEO_HOST`, `PASEO_HOME` | Select a daemon, exactly as for the `paseo` CLI. They also tell the slash-command lookup where to connect. |
 | `HERDR4PASEO_HISTORY` | Path of the prompt-history file (default `~/.local/state/herdr4paseo/history.json`, the last 200 prompts, shared by all agents). |
 | `PASEO_BIN` | Path to the `paseo` executable to run (default `paseo`). The tests point it at a fake. |
+| `NO_COLOR` | Turns colour off (bold, italic and dim stay). Textual treats an empty `NO_COLOR=` as set too, which is stricter than [no-color.org](https://no-color.org). See [Colours](docs/usage.md#colours). |
+| `TEXTUAL_COLOR_SYSTEM` | Force the colour depth: `auto` (default), `standard` (16 colours), `256` or `truecolor`. |
 
 ## Limits
 
 1. It is a log view, not the agent's own TUI: no PTY features. Slash commands work because `paseo send` passes `/context`, `/compact` and skills such as `/steps` through to the provider. The Paseo app's own commands (for example `/exit`) are client-side in Paseo and do not exist here.
 2. Permission requests: a banner lists the shown agent's pending requests (polled every 3 s). Ctrl+A or Ctrl+D opens a confirmation listing them; `y` answers each listed request by id with `paseo permit allow|deny`, so a request that arrives after you looked is never approved blind. While none are pending, Ctrl+A and Ctrl+D keep their prompt-editing meaning (line start, delete).
 3. Slash suggestions come from the daemon's `list_commands_request`, the one request the `paseo` CLI does not expose, over its local WebSocket. It is read-only. The daemon's local credential is read from `$PASEO_HOME/local-credential` and sent only to a loopback daemon. A remote daemon that needs a password gets no suggestions; typed commands still send.
-4. Log entries are coloured by the `[Tag]` prefix `paseo logs` prints; untagged continuation lines are plain.
+4. Log colouring is line by line from what `paseo logs` prints: the `[Tag]` prefix, continuation lines of `[User]` and `[Thought]` entries, markdown, diff and code fences in assistant text. `paseo logs` does not tag assistant text, so a multi-line `[User]` prompt followed directly by assistant text shows that text in the user colour until the next tag. It prints no tool results or diffs, so those cannot be coloured. Details: [Colours](docs/usage.md#colours).
 5. `paseo send` text beginning with `-` gets one leading space so the CLI does not read it as a flag.
 6. Ctrl+R needs a provider because `paseo run` refuses to start without one; it is prefilled from the current agent. Worktrees, models and output schemas are not offered: use the `paseo` CLI.
 7. Checked against a live daemon on 2026-10-30: the `paseo` calls for `permit allow|deny`, `run`, `stop` and `ls`. The TUI's new keys (Ctrl+R, Ctrl+X, the bell, reconnect, the picker filter) are covered by tests against fakes only.

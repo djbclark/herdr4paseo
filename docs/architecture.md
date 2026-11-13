@@ -28,6 +28,17 @@ The `paseo` CLI has no command that lists an agent's slash commands, but the dae
 
 The response lists `name`, `description`, `argumentHint` and `kind` (`command` or `skill`) for each entry. The protocol is defined in the [getpaseo/paseo](https://github.com/getpaseo/paseo) repository (`packages/protocol`, and `listCommands` in `packages/client`). Recheck it if Paseo changes its protocol version.
 
+## Styling
+
+All colour decisions are in `core.py`.
+
+1. `THEME` maps semantic tokens (`user.tag`, `thought`, `tool.tag`, `error.text`, `diff.add`, `md.heading`, `status.running`, ...) to Rich style strings. `style_for(token)` looks one up and raises `KeyError` for an unknown token, so a typo in a call site fails in tests instead of rendering unstyled. The defaults are the 16 ANSI names, and each token that must stay meaningful without colour carries bold, italic or dim, which Textual's `NO_COLOR` filter keeps.
+2. `LogStyler` styles one line at a time and keeps two pieces of state: the kind of the last tagged block (`user`, `thought`, `tasks` or `assistant`) and the language of the open code fence. A tagged line sets the block and clears the fence; an untagged line continues `user`, `thought` or `tasks`, and otherwise is assistant text, which gets a cheap markdown pass, diff colouring in `diff` fences and `rich.syntax.Syntax` (Pygments, `ansi_dark`) in other fences. `app.py` makes a new `LogStyler` each time it clears the log. `style_line(line)` is the stateless one-line form.
+3. A tag is `^[Name]` followed by whitespace or end of line, so `[text](url)` is not one. `[Compacted]`, `[Earlier chat history omitted]`, `[Reconnected; ...]` and `[Timeline replaced; ...]` are `meta`, not tool calls.
+4. `_note(message, token)` in `app.py` takes a token, never a raw style. `status_style(status)` colours the header status (via `format_title`) and the picker rows.
+5. Attribution: the token vocabulary is adapted from pi's theme tokens ([earendil-works/pi](https://github.com/earendil-works/pi), MIT, (c) 2025 Mario Zechner); the status colours follow herdr's `status_color` ([herdrdev/herdr](https://github.com/herdrdev/herdr), Apache-2.0). No code was copied from either, and none from projects under non-MIT-compatible licences.
+6. Not built: a user theme file (a `HERDR4PASEO_THEME` override of `THEME`) and re-resolving tokens from Textual's theme variables when the theme changes.
+
 ## Security notes
 
 1. The daemon's local credential is read from `$PASEO_HOME/local-credential`, the file the `paseo` CLI itself uses on this machine. It goes into the `hello` message only when the daemon address is loopback (`127.0.0.1`, `localhost` or `::1`). It is never sent to a remote host, printed or logged.
@@ -38,7 +49,7 @@ The response lists `name`, `description`, `argumentHint` and `kind` (`command` o
 
 | File | Role |
 | --- | --- |
-| `src/herdr4paseo/core.py` | Pure helpers: argv builders, parsing of agent, permission and command listings, command matching, log-line styling. No I/O. |
+| `src/herdr4paseo/core.py` | Pure helpers: argv builders, parsing of agent, permission and command listings, command matching, the style token table (`THEME`) and `LogStyler`. No I/O. |
 | `src/herdr4paseo/daemon.py` | The WebSocket client for `list_commands_request`. |
 | `src/herdr4paseo/app.py` | The Textual UI: log, prompt, picker, permission banner and confirmation, slash panel, key bindings, `main()`. |
 | `tests/fake_paseo.py` | A fake `paseo` executable that records its argv, selected with `PASEO_BIN`. |
