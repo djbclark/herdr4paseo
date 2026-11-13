@@ -1,3 +1,4 @@
+import ast
 import json
 import stat
 from pathlib import Path
@@ -6,7 +7,9 @@ import pytest
 from textual.widgets import RichLog
 
 from fake_daemon import serve
+from herdr4paseo import app as app_module
 from herdr4paseo.app import Herdr4PaseoApp, PromptArea
+from herdr4paseo.core import THEME
 
 FAKE = Path(__file__).with_name("fake_paseo.py")
 
@@ -441,3 +444,80 @@ async def test_ctrl_q_quits(calls):
         await pilot.press("ctrl+q")
         await pilot.pause(0.2)
     assert app._exit
+
+
+def _segments(app: Herdr4PaseoApp, needle: str):
+    for strip in app.query_one("#log", RichLog).lines:
+        if needle in strip.text:
+            return list(strip)
+    raise AssertionError(f"{needle!r} not in the log")
+
+
+async def test_streamed_lines_carry_token_styles(calls):
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await settle(pilot, app, "plain assistant line")
+        tag = next(seg for seg in _segments(app, "[User]") if seg.text.startswith("[User]"))
+        assert tag.style.bold and tag.style.color.name == "cyan"
+
+
+@pytest.mark.parametrize("value", ["1", ""])
+async def test_no_color_still_renders_the_log(calls, monkeypatch, value):
+    # Textual treats an empty NO_COLOR as set, which is stricter than no-color.org.
+    monkeypatch.setenv("NO_COLOR", value)
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await settle(pilot, app, "plain assistant line")
+        assert app.no_color
+        assert "[User] hello there" in log_text(app)
+
+
+async def test_header_status_word_is_coloured(calls):
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await settle(pilot, app, "plain assistant line")
+        content = app.format_title("alpha", "running | send: steer | full log")
+        assert content.plain == "alpha — running | send: steer | full log"
+        start = content.plain.index("running")
+        status = next(sp for sp in content.spans if (sp.start, sp.end) == (start, start + len("running")))
+        assert "yellow" in str(status.style)
+        assert app.format_title("alpha", "weird | x").plain == "alpha — weird | x"  # unknown status: Textual's own
+
+
+def _note_tokens() -> list[ast.expr]:
+    tree = ast.parse(Path(app_module.__file__).read_text())
+    return [
+        node.args[1]
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "_note"
+        and len(node.args) == 2
+    ]
+
+
+def test_every_note_call_site_names_a_known_token():
+    sites = _note_tokens()
+    assert len(sites) >= 14  # the call sites in app.py; an extra argument form would hide one
+    for arg in sites:
+        branches = [arg.body, arg.orelse] if isinstance(arg, ast.IfExp) else [arg]
+        for branch in branches:
+            assert isinstance(branch, ast.Constant), ast.dump(branch)
+            assert branch.value in THEME, branch.value
+
+
+async def test_notes_only_ask_style_for_known_tokens(calls, monkeypatch):
+    asked: list[str] = []
+
+    def strict(token: str) -> str:
+        asked.append(token)
+        return THEME[token]  # KeyError for an unknown token
+
+    monkeypatch.setattr(app_module, "style_for", strict)
+    monkeypatch.setenv("FAKE_PASEO_SEND_FAIL", "1")
+    app = Herdr4PaseoApp("aaaaaaa", tail=5, behavior="steer")
+    async with app.run_test() as pilot:
+        await settle(pilot, app, "plain assistant line")
+        await pilot.press(*"x", "enter")
+        await settle(pilot, app, "send failed")
+    assert "error.text" in asked

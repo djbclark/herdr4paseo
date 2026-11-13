@@ -16,6 +16,7 @@ from textual import events, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
+from textual.content import Content
 from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import Footer, Header, Input, OptionList, RichLog, Static, TextArea
@@ -27,7 +28,9 @@ from .core import (
     BEHAVIORS,
     Agent,
     Command,
+    LogStyler,
     Permission,
+    agent_label_text,
     filter_agents,
     find_agent,
     history_path,
@@ -43,8 +46,9 @@ from .core import (
     save_history,
     send_argv,
     should_alert,
+    status_style,
     stop_argv,
-    style_line,
+    style_for,
 )
 from .daemon import DaemonError, fetch_commands
 
@@ -89,13 +93,13 @@ class PickAgent(ModalScreen[str]):
     def compose(self) -> ComposeResult:
         with Vertical(id="pick-box"):
             yield Input(placeholder="filter agents", id="pick-filter")
-            yield OptionList(*[Option(a.label, id=a.id) for a in self._agents], id="pick-list")
+            yield OptionList(*[Option(agent_label_text(a), id=a.id) for a in self._agents], id="pick-list")
 
     def on_input_changed(self, event: Input.Changed) -> None:
         shown = filter_agents(self._agents, event.value)
         options = self.query_one("#pick-list", OptionList)
         options.clear_options()
-        options.add_options([Option(a.label, id=a.id) for a in shown])
+        options.add_options([Option(agent_label_text(a), id=a.id) for a in shown])
         if shown:
             options.highlighted = 0
 
@@ -288,12 +292,12 @@ class Herdr4PaseoApp(App[None]):
     async def _list_agents(self) -> list[Agent]:
         code, out, err = await run_paseo(ls_argv())
         if code != 0:
-            self._note(f"paseo ls failed (rc={code}): {err.strip()}", "bold red")
+            self._note(f"paseo ls failed (rc={code}): {err.strip()}", "error.text")
             return []
         try:
             return parse_agents(out)
         except ValueError as exc:
-            self._note(f"could not read agent list: {exc}", "bold red")
+            self._note(f"could not read agent list: {exc}", "error.text")
             return []
 
     @work(exclusive=True, group="choose")  # push_screen_wait only runs inside a worker
@@ -304,7 +308,7 @@ class Herdr4PaseoApp(App[None]):
             choice = await self.push_screen_wait(PickAgent(agents))
             picked = find_agent(agents, choice) if choice else None
         if picked is None:
-            self._note("no agent selected; Ctrl+L to pick one", "bold red")
+            self._note("no agent selected; Ctrl+L to pick one", "error.text")
             return
         self.agent = picked
         self._last_status = picked.status
@@ -327,7 +331,7 @@ class Herdr4PaseoApp(App[None]):
             self._last_status = current.status
             if reason:
                 self.bell()
-                self._note(f"alert: {reason}", "bold yellow")
+                self._note(f"alert: {reason}", "permission")
 
     async def _refresh_permits(self) -> None:
         """Poll pending permission requests for the shown agent and update the banner."""
@@ -349,14 +353,28 @@ class Herdr4PaseoApp(App[None]):
         else:
             banner.add_class("hidden")
 
+    def format_title(self, title: str, sub_title: str) -> Content:
+        """Like Textual's, but the status word keeps its colour (herdr's running/idle/error mapping)."""
+        status, sep, rest = sub_title.partition(" | ")
+        style = status_style(status)
+        if not sep or not style:
+            return super().format_title(title, sub_title)
+        return Content.assemble(
+            Content(title),
+            (" — ", "dim"),
+            Content.from_rich_text(Text(status, style=style)),
+            (sep + rest, "dim"),
+        )
+
     def _update_subtitle(self, status: str) -> None:
         view = "tools only" if self.tools_only else "full log"
         self.sub_title = f"{status} | send: {self.behavior} | {view}"
 
     # -- log stream -----------------------------------------------------------------
 
-    def _note(self, message: str, style: str) -> None:
-        self.query_one("#log", RichLog).write(Text(message, style=style))
+    def _note(self, message: str, token: str) -> None:
+        """Write one of herdr4paseo's own lines to the log, styled by a core.THEME token."""
+        self.query_one("#log", RichLog).write(Text(message, style=style_for(token)))
 
     @work(exclusive=True, group="stream")
     async def _start_stream(self) -> None:
@@ -367,6 +385,7 @@ class Herdr4PaseoApp(App[None]):
         agent_id, tools_only = self.agent.id, self.tools_only
         while True:
             log.clear()
+            styler = LogStyler()  # fresh state for each (re)attach: the tail is replayed from scratch
             proc = await asyncio.create_subprocess_exec(
                 *logs_argv(agent_id, tail=self._tail, tools_only=tools_only),
                 stdin=asyncio.subprocess.DEVNULL,
@@ -376,14 +395,14 @@ class Herdr4PaseoApp(App[None]):
             try:
                 assert proc.stdout is not None
                 while line := await proc.stdout.readline():
-                    log.write(style_line(line.decode(errors="replace").rstrip("\n")))
+                    log.write(styler.style(line.decode(errors="replace").rstrip("\n")))
                 rc = await proc.wait()
             finally:
                 if proc.returncode is None:
                     with contextlib.suppress(ProcessLookupError):
                         proc.terminate()
                     await proc.wait()
-            self._note(f"log stream ended (rc={rc}); reconnecting in {RECONNECT_SECONDS:g}s", "dim")
+            self._note(f"log stream ended (rc={rc}); reconnecting in {RECONNECT_SECONDS:g}s", "meta")
             await asyncio.sleep(RECONNECT_SECONDS)
 
     # -- slash commands -------------------------------------------------------------
@@ -395,7 +414,7 @@ class Herdr4PaseoApp(App[None]):
         try:
             self.commands = await fetch_commands(agent_id)
         except DaemonError as exc:
-            self._note(f"slash completion unavailable ({exc}); typed /commands still work", "dim")
+            self._note(f"slash completion unavailable ({exc}); typed /commands still work", "meta")
         self._update_slash()
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
@@ -438,7 +457,7 @@ class Herdr4PaseoApp(App[None]):
     async def on_prompt_area_submitted(self, message: PromptArea.Submitted) -> None:
         message.stop()
         if self.agent is None:
-            self._note("no agent selected; Ctrl+L to pick one", "bold red")
+            self._note("no agent selected; Ctrl+L to pick one", "error.text")
             return
         prompt = self.query_one("#prompt", PromptArea)
         text = prompt.text.strip()
@@ -449,7 +468,7 @@ class Herdr4PaseoApp(App[None]):
             return
         code, _out, err = await run_paseo(send_argv(self.agent.id, text, self.behavior))
         if code != 0:
-            self._note(f"send failed (rc={code}): {err.strip()}", "bold red")
+            self._note(f"send failed (rc={code}): {err.strip()}", "error.text")
             return  # keep the text so nothing typed is lost
         self._history.append(text)
         self._history_pos = len(self._history)
@@ -477,14 +496,14 @@ class Herdr4PaseoApp(App[None]):
         await self._refresh_permits()
         shown = list(self.permits)  # answer exactly what the confirmation lists
         if not shown:
-            self._note("no pending permission requests", "dim")
+            self._note("no pending permission requests", "meta")
             return
         if not await self.push_screen_wait(ConfirmPermits(decision, shown)):
             return
         for permit in shown:
             code, _out, err = await run_paseo(permit_argv(decision, self.agent.id, permit.id))
             result = "ok" if code == 0 else f"failed (rc={code}): {err.strip()}"
-            self._note(f"permit {decision} {permit.label}: {result}", "dim" if code == 0 else "bold red")
+            self._note(f"permit {decision} {permit.label}: {result}", "success" if code == 0 else "error.text")
         await self._refresh_permits()
 
     @work(exclusive=True, group="new")  # push_screen_wait only runs inside a worker
@@ -493,14 +512,14 @@ class Herdr4PaseoApp(App[None]):
         if not prompt:
             return
         if not os.path.isdir(directory):
-            self._note(f"new agent: {directory} is not a directory", "bold red")
+            self._note(f"new agent: {directory} is not a directory", "error.text")
             return
         code, out, err = await run_paseo(run_argv(prompt, provider), cwd=directory)
         agent_id = out.strip().splitlines()[-1] if out.strip() else ""
         if code != 0 or not agent_id:
-            self._note(f"run failed (rc={code}): {(err or out).strip()}", "bold red")
+            self._note(f"run failed (rc={code}): {(err or out).strip()}", "error.text")
             return
-        self._note(f"started agent {agent_id[:7]} in {directory}", "dim")
+        self._note(f"started agent {agent_id[:7]} in {directory}", "success")
         self._choose_agent(agent_id)
 
     @work(exclusive=True, group="stop")  # push_screen_wait only runs inside a worker
@@ -511,9 +530,9 @@ class Herdr4PaseoApp(App[None]):
             return
         code, _out, err = await run_paseo(stop_argv(self.agent.id))
         if code == 0:
-            self._note(f"stopped {self.agent.name}", "dim")
+            self._note(f"stopped {self.agent.name}", "status")
         else:
-            self._note(f"stop failed (rc={code}): {err.strip()}", "bold red")
+            self._note(f"stop failed (rc={code}): {err.strip()}", "error.text")
 
     def action_history_prev(self) -> None:
         self._recall(-1)
