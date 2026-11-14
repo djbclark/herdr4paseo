@@ -1,7 +1,7 @@
 # Notes for AI sessions in herdr4paseo
 
 A Textual TUI (log view plus prompt box) for one Paseo agent, built on the `paseo` CLI plus one read-only daemon WebSocket request (`list_commands_request`).
-Public repo: github.com/djbclark/herdr4paseo.
+Public repo: github.com/frdminc/herdr4paseo.
 
 1. `src/herdr4paseo/core.py` is pure (argv builders, `paseo ls --json` parsing, log-line styling); `daemon.py` is the WebSocket client for slash-command discovery; `app.py` is the Textual UI.
 2. Tests use `tests/fake_paseo.py` through `PASEO_BIN` and `tests/fake_daemon.py` through `PASEO_HOST`/`PASEO_HOME`; never point tests at a real daemon or send to a live agent. The daemon's `local-credential` file is read only for a loopback daemon and never printed or sent elsewhere.
