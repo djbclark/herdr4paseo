@@ -29,7 +29,7 @@ Paseo agents belong to the Paseo daemon, and `paseo attach` is a read-only strea
 Needs Python 3.11+ and the `paseo` CLI on `PATH`, with the Paseo daemon running.
 
 ```sh
-uv tool install git+https://github.com/djbclark/herdr4paseo
+uv tool install git+https://github.com/frdminc/herdr4paseo
 ```
 
 To work on it, clone the repo and run `uv tool install --editable .`.
@@ -113,10 +113,10 @@ The tests drive the app with a fake `paseo` executable (`tests/fake_paseo.py`, s
 
 | Repo | Role |
 | --- | --- |
-| [djbclark/herdr](https://github.com/djbclark/herdr) | Fork of [herdrdev/herdr](https://github.com/herdrdev/herdr) |
-| [herdr-plain-line](https://github.com/djbclark/herdr-plain-line) | Local plugin: plain-English popup for tab/workspace rename and create |
-| [herdr-sleeper](https://github.com/djbclark/herdr-sleeper) | Plugin: sleep idle agent panes, wake later |
-| [herdr4paseo](https://github.com/djbclark/herdr4paseo) | Terminal UI to watch/steer a Paseo agent from a pane |
+| [frdminc/herdr](https://github.com/frdminc/herdr) | Fork of [herdrdev/herdr](https://github.com/herdrdev/herdr) |
+| [herdr-plain-line](https://github.com/frdminc/herdr-plain-line) | Local plugin: plain-English popup for tab/workspace rename and create |
+| [herdr-sleeper](https://github.com/frdminc/herdr-sleeper) | Plugin: sleep idle agent panes, wake later |
+| [herdr4paseo](https://github.com/frdminc/herdr4paseo) | Terminal UI to watch/steer a Paseo agent from a pane |
 | [paseo4herdr](https://github.com/djbclark/paseo4herdr) | Paseo plugin mirroring OMP agents that run in Herdr |
 
 
